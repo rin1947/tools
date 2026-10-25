@@ -1,0 +1,7 @@
+/* Trang chủ Gấu Bép — style riêng (ô tìm kiếm, chip lọc) */
+.filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; align-items: center; }
+.filters input { max-width: 280px; border-radius: 999px; padding-left: 14px; }
+.chip { font: inherit; font-weight: 800; font-size: 13px; padding: 5px 14px; border-radius: 999px;
+  border: 2px solid var(--border); background: var(--surface); color: var(--text-soft); cursor: pointer; }
+.chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.empty { text-align: center; padding: 40px 0; color: var(--text-mute); }

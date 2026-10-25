@@ -1,0 +1,47 @@
+# =====================================================
+# BẢO MẬT — repo PUBLIC. Các file dưới đây KHÔNG BAO GIỜ được đưa lên.
+# =====================================================
+
+# File dữ liệu / chứng từ
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+*.pdf
+*.doc
+*.docx
+*.ppt
+*.pptx
+*.zip
+*.rar
+*.7z
+# ngoại lệ: file MẪU rỗng của tool
+!tools/*/Mau-*.xlsx
+
+# Ảnh (ảnh chứng từ, ảnh SP chưa ra mắt). Ảnh giao diện đặt trong assets/img/
+*.jpg
+*.jpeg
+*.png
+*.heic
+*.webp
+!assets/img/**
+
+# Thư mục dữ liệu riêng
+data/
+private/
+local/
+*.local.*
+
+# Bí mật
+.env
+.env.*
+*.key
+*.pem
+credentials*.json
+service-account*.json
+token*.json
+
+# Hệ thống
+.DS_Store
+Thumbs.db
+node_modules/

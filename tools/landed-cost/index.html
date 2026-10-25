@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Landed Cost Nhập Khẩu · Gấu Bép</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚢</text></svg>">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="../../assets/theme.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Landed Cost Nhập Khẩu</h1>
+      <div class="sub">Tính giá về kho (chưa VAT) theo mã HS, C/O, cước cont và chi phí kiểm tra chuyên ngành</div>
+    </div>
+    <div class="chips" id="verChips"></div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="calc" aria-selected="true">Tính giá</button>
+    <button role="tab" data-tab="lookup" aria-selected="false">Tra cứu HS</button>
+    <button role="tab" data-tab="changes" aria-selected="false">Thay đổi &amp; cập nhật</button>
+    <button role="tab" data-tab="method" aria-selected="false">Cách tính</button>
+  </nav>
+
+  <!-- ============ TAB TÍNH GIÁ ============ -->
+  <div data-panel="calc">
+    <details class="box panel" id="paramBox" open>
+      <summary><h2>Thông số chung</h2><span class="muted small" id="paramSum"></span></summary>
+      <div class="grid params" style="margin-top:14px">
+        <label class="f">Tỷ giá USD/VND<input id="s_rate" class="num" inputmode="decimal"><span class="h">VCB bán ra 23/10/2026: 26.020</span></label>
+        <label class="f">Ngày dự kiến thông quan<input id="s_date" type="date"><span class="h">Quyết định VAT 8%/10% và thuế RCEP theo năm</span></label>
+        <label class="f">Cước + khai thác cont 40' (USD)<input id="s_c40" class="num" inputmode="decimal"></label>
+        <label class="f">Cước + khai thác cont 20' (USD)<input id="s_c20" class="num" inputmode="decimal"></label>
+        <label class="f">% cước tính vào trị giá thuế<input id="s_frPct" class="num" inputmode="decimal"><span class="h">100% = thận trọng; giảm nếu tách phí local</span></label>
+        <label class="f">Bảo hiểm (% giá trị lô hàng)<input id="s_ins" class="num" inputmode="decimal"><span class="h">Tính trên trị giá FOB của lô</span></label>
+        <label class="f">Cách tính thuế NK<select id="s_coMode"><option value="single">Theo lựa chọn C/O từng sản phẩm</option><option value="compare">So sánh có và không C/O (chỉ trên màn hình)</option></select><span class="h">File Excel luôn xuất theo lựa chọn C/O từng sản phẩm</span></label>
+        <label class="f">Phí khác / cont (VND)<input id="s_other" class="num" inputmode="decimal"><span class="h">Khai HQ, trucking về kho…</span></label>
+      </div>
+      <h3 style="margin-top:18px">Chi phí kiểm tra chuyên ngành (VND)</h3>
+      <div class="grid params" style="margin-top:10px">
+        <label class="f">QCVN 04 – an toàn điện<input id="s_t04" class="num" inputmode="decimal"><span class="h">Tính theo lô, theo từng mã</span></label>
+        <label class="f">QCVN 09 – tương thích điện từ<input id="s_t09" class="num" inputmode="decimal"><span class="h">Phân bổ theo 1 năm, theo mã</span></label>
+        <label class="f">Hiệu suất năng lượng<input id="s_tHs" class="num" inputmode="decimal"><span class="h">Phân bổ theo 1 năm, theo mã</span></label>
+        <label class="f">An toàn thực phẩm<input id="s_tAt" class="num" inputmode="decimal"><span class="h">Phân bổ theo 1 năm, theo mã</span></label>
+      </div>
+    </details>
+
+    <div class="sechead">
+      <h2>Sản phẩm</h2>
+      <p class="muted small">Mã HS được gợi ý từ tên sản phẩm; bấm vào ô HS để chọn hoặc gõ mã.</p>
+    </div>
+    <div class="banner" id="sampleBanner" hidden>
+      <span>Đây là sản phẩm <b>ví dụ</b> để bạn xem tool chạy thế nào. Xoá đi rồi nhập sản phẩm thật.</span>
+      <button id="clearSamples">Xoá sản phẩm ví dụ</button>
+    </div>
+    <section class="panel" id="impPanel" hidden style="margin-bottom:14px"></section>
+    <div class="plist" id="plist"></div>
+    <div class="actions">
+      <button id="addBtn">＋ Thêm sản phẩm</button>
+      <button id="impBtn">Nhập từ Excel</button><input type="file" id="impFile" accept=".xlsx,.xlsm" hidden>
+      <button class="ghost" id="tplBtn">Tải file mẫu</button>
+      <button class="primary" id="xlsBtn">Xuất file Excel</button>
+      <span class="muted small" id="xlsMsg" style="align-self:center"></span>
+    </div>
+
+    <div class="sechead"><h2>Tổng hợp</h2><p class="muted small">VND / sản phẩm</p></div>
+    <div class="tblwrap"><table id="sumTbl"></table></div>
+  </div>
+
+  <!-- ============ TAB TRA CỨU ============ -->
+  <div data-panel="lookup" hidden>
+    <div class="grid" style="grid-template-columns:minmax(0,1fr) auto auto;align-items:end;margin-bottom:8px">
+      <div class="hsfield"><label class="f">Từ khoá sản phẩm hoặc mã HS (gõ có dấu hay không dấu đều được)<input id="lkQ" autocomplete="off" placeholder="vd: quạt điều hòa, nồi chiên, máy ép, 8509"></label><div class="sug" id="lkSug" hidden></div></div>
+      <label class="f">Xuất xứ<select id="lkOrigin"></select></label>
+      <label class="f">Năm<select id="lkYear"></select></label>
+    </div>
+    <div class="chips" id="lkChips" style="margin-bottom:14px"></div>
+    <div class="lk">
+      <div class="lkres" id="lkRes"></div>
+      <section class="panel" id="lkDetail"><p class="muted">Chọn một mã bên trái để xem đầy đủ thuế suất, chính sách và kiểm tra chuyên ngành.</p></section>
+    </div>
+  </div>
+
+  <!-- ============ TAB THAY ĐỔI ============ -->
+  <div data-panel="changes" hidden>
+    <div class="two">
+      <section class="panel">
+        <h2>Mốc thay đổi ảnh hưởng giá vốn</h2>
+        <p class="muted small" style="margin:4px 0 14px">Trạng thái tính theo hôm nay và ngày dự kiến thông quan bạn nhập.</p>
+        <div class="tl" id="timeline"></div>
+      </section>
+      <section class="panel">
+        <h2>Nguồn dữ liệu trong tool</h2>
+        <div class="tblwrap" style="margin-top:10px"><table id="srcTbl"></table></div>
+        <h3 style="margin-top:18px">Lịch rà soát gợi ý</h3>
+        <ul class="small prose" style="padding-left:18px">
+          <li><b>Mỗi lần đặt hàng:</b> cập nhật tỷ giá, cước cont theo báo giá forwarder.</li>
+          <li><b>01/01 hằng năm:</b> thuế RCEP giảm theo lộ trình; kiểm tra lại VAT nếu chính sách giảm 2% hết hạn.</li>
+          <li><b>Khi có thông tư mới:</b> thêm dòng điều chỉnh bên dưới (có ngày hiệu lực), tool tự áp từ ngày đó.</li>
+          <li><b>Khi có file biểu thuế mới:</b> nạp file ở mục cuối trang.</li>
+        </ul>
+      </section>
+    </div>
+
+    <div class="sechead"><h2>Ảnh hưởng tới sản phẩm của bạn</h2><p class="muted small">Landed cost chưa VAT theo lựa chọn C/O của từng sản phẩm, VND/sp</p></div>
+    <div class="tblwrap"><table id="sensTbl"></table></div>
+
+    <div class="sechead"><h2>Điều chỉnh thuế suất thủ công</h2><p class="muted small">Dùng khi có văn bản mới trước khi kịp cập nhật file biểu thuế</p></div>
+    <section class="panel">
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr));align-items:end">
+        <label class="f">Mã HS (8 số)<input id="ov_hs" class="mono" placeholder="84796000"></label>
+        <label class="f">Loại thuế<select id="ov_field"></select></label>
+        <label class="f">Thuế suất mới (%)<input id="ov_val" class="num" inputmode="decimal"></label>
+        <label class="f">Hiệu lực từ<input id="ov_from" type="date"></label>
+        <label class="f">Văn bản<input id="ov_doc" placeholder="vd: NĐ xx/2027/NĐ-CP"></label>
+        <button id="ov_add">Thêm điều chỉnh</button>
+      </div>
+      <div class="tblwrap" style="margin-top:12px"><table id="ovTbl"></table></div>
+    </section>
+
+    <div class="sechead"><h2>Nạp file biểu thuế mới</h2></div>
+    <section class="panel">
+      <p class="small prose" style="margin-top:0">Chọn file biểu thuế XNK cùng định dạng (có sheet <code>BT2025</code> hoặc sheet chính cùng cột, và các sheet RCEP <code>RCEPT-A, B…F</code>). Tool đọc lại mã HS, thuế suất, chính sách và lưu trên máy này. File lớn (~30MB) mất khoảng 10–40 giây.</p>
+      <div class="actions" style="margin-top:4px">
+        <input type="file" id="tfFile" accept=".xlsx,.xlsm,.xls" style="max-width:340px">
+        <button id="tfReset">Dùng lại dữ liệu gốc trong tool</button>
+      </div>
+      <p class="small" id="tfMsg"></p>
+    </section>
+  </div>
+
+  <!-- ============ TAB CÁCH TÍNH ============ -->
+  <div data-panel="method" hidden>
+    <section class="panel prose">
+      <h2>Công thức tính cho mỗi sản phẩm</h2>
+      <p><b>1. Cước / sp.</b> Mỗi sản phẩm đi cont riêng: số cont = SL lô ÷ MOQ (làm tròn lên), cước/sp = số cont × cước cont ÷ SL lô. Sản phẩm cùng <b>nhóm ghép cont</b>: mỗi mã chiếm SL ÷ MOQ phần cont, cước cả nhóm chia theo phần cont chiếm dụng. MOQ được hiểu là số lượng xếp đầy 1 cont của loại đã chọn.</p>
+      <p><b>2. Bảo hiểm</b> = giá trị lô hàng (FOB) × tỷ lệ bảo hiểm (mặc định 0,09%). <b>Trị giá tính thuế (CIF)</b> = FOB + cước × (% cước tính thuế) + bảo hiểm, quy đổi theo tỷ giá.</p>
+      <p><b>3. Thuế NK</b> = CIF × thuế suất. Mỗi sản phẩm chọn <i>Có C/O</i> hoặc <i>Không C/O</i>; bảng và file Excel chỉ hiện một mức thuế và một cột landed cost. Muốn xem cả hai phương án trên màn hình, đổi "Cách tính thuế NK" sang <i>So sánh có và không C/O</i>; file Excel vẫn chỉ xuất theo lựa chọn C/O. <i>Không C/O</i>: thuế NK ưu đãi (MFN). <i>Có C/O</i>: thuế suất thấp nhất trong các hiệp định áp dụng cho xuất xứ, ví dụ Trung Quốc lấy min(ACFTA – Form E, RCEP biểu C theo năm thông quan). Nước bị loại trừ trong ghi chú (vd "-TH") không được hưởng.</p>
+      <p><b>4. Kiểm tra chuyên ngành.</b> QCVN 04: chi phí ÷ SL lô (tính mỗi lô, mỗi mã). QCVN 09, hiệu suất năng lượng, ATTP: chi phí ÷ SL nhập dự kiến trong năm của mã đó (mặc định = SL lô, tức 1 lô/năm).</p>
+      <p><b>5. Landed cost chưa VAT</b> = FOB + cước + bảo hiểm + thuế NK + phí kiểm tra + phí khác. VAT nhập khẩu = (CIF + thuế NK) × VAT, được khấu trừ nên không cộng vào giá vốn. <b>Landed cost gồm VAT</b> = landed cost chưa VAT + VAT NK phải nộp, là số tiền thực chi khi hàng về kho, dùng để tính dòng tiền.</p>
+      <h3 style="margin-top:16px">Tự nhận diện kiểm tra theo mã HS</h3>
+      <ul>
+        <li><b>QCVN 04 / QCVN 09:</b> tra Danh mục TT 36/2026/TT-BKHCN (hiệu lực 01/07/2026). Phụ lục I (rủi ro cao): chứng nhận hợp quy + kiểm tra nhà nước khi nhập. Phụ lục II (rủi ro trung bình): công bố hợp quy trước khi lưu thông.</li>
+        <li><b>Hiệu suất năng lượng:</b> Danh mục QĐ 1725/QĐ-BCT ngày 01/07/2024.</li>
+        <li><b>Hàng phân mã theo thông số:</b> nhập ô "Thông số phân loại" (tool tự đổi tên ô theo loại hàng), tool chọn mã theo ngưỡng và ghi thông số vào mô tả hàng hoá:<br>Máy giặt (kg vải khô/lần): ≤ 6 kg → 8450.11.10 · 6–10 kg → 8450.11.90 · > 10 kg → 8450.20.00 (bán tự động có vắt ly tâm → 8450.12.xx)<br>Máy sấy quần áo (kg vải khô/lần): ≤ 10 kg → 8451.21.00 · > 10 kg → 8451.29.00<br>Quạt điện (W): ≤ 125 W → 8414.51.xx · > 125 W → 8414.59.41/.49<br>Điều hòa không khí (kW lạnh): ≤ 21,10 kW → 8415.10.20 · lớn hơn → 8415.10.90<br>Tủ lạnh gia đình (lít): ≤ 230 L → 8418.21.10 · > 230 L → 8418.21.90</li>
+        <li><b>Máy làm mát bay hơi (quạt điều hòa):</b> theo CV 10442/TCHQ-TXNK, tool so trọng lượng bạn nhập với ngưỡng 20 kg và báo nếu mã HS không khớp (trên 20 kg → 8479.60.00, từ 20 kg trở xuống → 8509.80.90).</li>
+        <li><b>ATTP:</b> gợi ý khi tên sản phẩm hoặc nhóm HS cho thấy hàng tiếp xúc trực tiếp thực phẩm (máy xay, nồi, ấm…). Bạn tự xác nhận.</li>
+      </ul>
+      <p class="muted small">Mọi ô tick kiểm tra đều sửa được. Khi bạn tự tick/bỏ tick, tool giữ lựa chọn của bạn kể cả khi đổi mã HS.</p>
+    </section>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="../../assets/common.js"></script>
+<script src="tariff-data.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

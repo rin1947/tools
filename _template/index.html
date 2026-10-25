@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>__TOOL_NAME__</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>__ICON__</text></svg>">
+  <link rel="stylesheet" href="../../assets/theme.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <div class="container stack">
+
+      <!-- Hero: icon + tên + mô tả ngắn cách dùng -->
+      <section class="hero">
+        <div style="font-size:56px">__ICON__</div>
+        <div>
+          <h1>__TOOL_NAME__</h1>
+          <p>__MÔ TẢ 1–2 câu: tool làm gì, nhập gì, ra gì.__</p>
+        </div>
+        <span id="bamboo"></span>
+      </section>
+
+      <!-- Thanh công cụ -->
+      <div class="toolbar no-print">
+        <button class="btn btn-ghost btn-sm" id="btnSample">🐼 Nạp dữ liệu mẫu</button>
+        <button class="btn btn-ghost btn-sm" id="btnReset">🧹 Làm mới</button>
+        <span style="flex:1"></span>
+        <button class="btn btn-primary" id="btnExport">📗 Xuất Excel</button>
+      </div>
+
+      <!-- Bước 1: đầu vào -->
+      <section class="card">
+        <h2 class="section-title"><span class="num">1</span> Thông tin đầu vào</h2>
+        <div class="form-grid">
+          <div class="field">
+            <label>Ví dụ ô nhập <span class="hint" tabindex="0" data-tip="Giải thích ngắn: ô này là gì, lấy số ở đâu.">?</span></label>
+            <input id="example" type="text" inputmode="decimal" placeholder="0">
+          </div>
+        </div>
+      </section>
+
+      <!-- Bước 2: kết quả -->
+      <section class="card">
+        <h2 class="section-title"><span class="num">2</span> Kết quả</h2>
+        <div class="kpis" id="kpis"></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="../../assets/common.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
