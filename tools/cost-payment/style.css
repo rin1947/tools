@@ -12,8 +12,24 @@
 .edit-table input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
 .fee-table tr.group-start td { border-top: 2px solid var(--pink-200); }
 .fee-table select.grp { width: 135px; font-weight: 800; color: var(--accent); }
-.fee-table input.overridden { border-color: var(--pink-400); background: var(--pink-50); }
-.fee-table input[data-out="post"] { color: var(--text-soft); }
+
+/* ---------- Nhập hoá đơn ---------- */
+.dropzone {
+  display: flex; gap: 14px; align-items: center; padding: 16px 18px; margin-bottom: 12px;
+  border: 2.5px dashed var(--bamboo-400); border-radius: var(--radius); background: var(--accent-bg);
+  transition: background .15s, border-color .15s, transform .15s;
+}
+.dropzone.over { background: var(--pink-100); border-color: var(--pink-400); transform: scale(1.01); }
+.dz-icon { font-size: 34px; }
+.link { color: var(--accent); font-weight: 800; text-decoration: underline; }
+.import-log { display: grid; gap: 4px; margin-bottom: 12px; font-size: 13px; }
+.import-log:empty { display: none; }
+.log-head { display: flex; justify-content: space-between; align-items: center; }
+.log-row { padding: 6px 10px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.log-row.ok { background: var(--accent-bg); }
+.src-tag { font-size: 11px; color: var(--text-mute); padding: 1px 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 230px; }
+.fee-table td[data-out="post"] { font-weight: 800; }
+.fee-table input[data-k="vatAmt"]::placeholder { color: var(--text-mute); opacity: 1; }
 
 /* ---------- Cài đặt ---------- */
 .company-list { display: grid; gap: 12px; margin-bottom: 10px; }

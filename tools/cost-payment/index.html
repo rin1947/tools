@@ -16,13 +16,16 @@
         <div style="font-size:56px">🧾</div>
         <div>
           <h1>PA giá &amp; Đề nghị thanh toán</h1>
-          <p>Nhập chi phí theo hoá đơn của lô hàng một lần → ra bảng kê chi phí, phương án giá vốn và phiếu đề nghị thanh toán cho từng người nhận, in hoặc xuất Excel.</p>
+          <p>Thả hoá đơn điện tử (PDF / XML) và tờ khai ECUS vào là xong — tool tự đọc số hoá đơn, ngày, từng dòng phí, tiền thuế đúng như hoá đơn → ra bảng kê chi phí, phương án giá vốn và phiếu đề nghị thanh toán cho từng người nhận.</p>
         </div>
         <span id="bamboo"></span>
       </section>
 
       <div class="toolbar no-print">
         <button class="btn btn-pink btn-sm" id="btnNewLot">✨ Lô mới</button>
+        <label class="btn btn-primary btn-sm file-btn">📄 Nhập hoá đơn (PDF / XML)
+          <input type="file" id="fileInvoice" accept=".pdf,.xml" multiple hidden>
+        </label>
         <label class="btn btn-ghost btn-sm file-btn">📥 Nạp tờ khai ECUS (.xlsx)
           <input type="file" id="fileEcus" accept=".xlsx,.xls" hidden>
         </label>
@@ -58,7 +61,7 @@
           <span class="hint" tabindex="0" data-tip="Tên gợi nhớ là tên chọn ở cột Người nhận. STK chỉ lưu trên trình duyệt này.">?</span></h3>
         <div class="table-wrap">
           <table class="edit-table">
-            <thead><tr><th>Tên gợi nhớ</th><th>Chủ tài khoản</th><th>Số tài khoản</th><th>Ngân hàng</th><th class="num">Hạn TT (ngày)</th><th></th></tr></thead>
+            <thead><tr><th>Tên gợi nhớ</th><th>Chủ tài khoản</th><th>Số tài khoản</th><th>Ngân hàng</th><th class="num">Hạn TT (ngày)</th><th>MST bên bán <span class="hint" tabindex="0" data-tip="Hoá đơn của các MST này sẽ tự gán cho người nhận này (vd chi hộ phí nâng hạ). Tool tự điền khi bạn đổi người nhận ở bảng kê.">?</span></th><th></th></tr></thead>
             <tbody id="payeeBody"></tbody>
           </table>
         </div>
@@ -124,11 +127,17 @@
       <!-- ===================== 3. BẢNG KÊ ===================== -->
       <section class="card print-pa">
         <h2 class="section-title"><span class="num">3</span> Bảng kê chi phí</h2>
-        <p class="help-text no-print">Hoá đơn nhiều dòng phí: nhập mỗi dòng một hàng, <b>cùng số hoá đơn</b> → phiếu đề nghị tự gộp 1 dòng. Không có hoá đơn: chọn VAT "Không HĐ". Cột "+VAT" tự tính; gõ đè nếu tổng trên hoá đơn lệch 1–2đ do làm tròn.</p>
+        <div class="dropzone no-print" id="dropzone">
+          <div class="dz-icon">📄</div>
+          <div><b>Kéo thả hoá đơn PDF / XML vào đây</b> (nhiều file cùng lúc) — hoặc bấm <label class="link file-btn">chọn file<input type="file" id="fileInvoice2" accept=".pdf,.xml" multiple hidden></label>.
+          <div class="help-text">Thả luôn file tờ khai ECUS (.xlsx) vào đây cũng được. File chỉ đọc trên máy, không gửi đi đâu.</div></div>
+        </div>
+        <div id="importLog" class="import-log no-print"></div>
+        <p class="help-text no-print">Phí không có hoá đơn (chi ngoài, phí cố định…) thì gõ tay, chọn VAT "Không HĐ". Tiền VAT lấy đúng theo hoá đơn, không làm tròn; gõ tay thì tự tính = Phí -VAT × VAT%.</p>
         <div class="table-wrap">
           <table class="edit-table fee-table">
             <thead><tr>
-              <th>Nhóm</th><th>Loại phí</th><th class="num">Phí -VAT</th><th>VAT</th><th class="num">+VAT</th>
+              <th>Nhóm</th><th>Loại phí</th><th class="num">Phí -VAT</th><th>VAT</th><th class="num">Tiền VAT</th><th class="num">+VAT</th>
               <th>Số HĐ</th><th>Ngày HĐ</th><th>Ghi chú</th><th>Người nhận TT</th><th>Nội dung trên ĐNTT</th>
               <th title="Nằm trong trị giá tính thuế trên tờ khai (cước QT, bảo hiểm)">CIF</th>
               <th class="no-print" title="Giữ số tiền khi tạo lô mới">📌</th><th class="no-print"></th>
@@ -159,6 +168,7 @@
   </main>
 
   <script src="../../assets/common.js"></script>
+  <script src="invoice-parser.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

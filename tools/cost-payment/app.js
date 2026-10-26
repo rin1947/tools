@@ -7,7 +7,8 @@
      3) Phiếu đề nghị thanh toán cho từng người nhận
 
    CÔNG THỨC
-   - +VAT một dòng phí = Phí -VAT + ROUND(Phí -VAT × VAT%)   (gõ đè được nếu HĐ lệch do làm tròn)
+   - Tiền VAT = lấy ĐÚNG số trên hoá đơn (nhập từ PDF/XML); gõ tay mà để trống → Phí -VAT × VAT% (không làm tròn)
+   - +VAT = Phí -VAT + Tiền VAT
    - Tổng tiền hàng (USD) = Σ QTY × Đơn giá
    - % chi phí = (Σ Cước QT + Σ Phí làm hàng + Σ Bảo hiểm, đều TRƯỚC VAT) ÷ Tỷ giá PA ÷ Tổng tiền hàng
    - Giá vốn dự kiến = Đơn giá × (1 + % chi phí) × Tỷ giá PA × (1 + % thuế NK)
@@ -16,6 +17,9 @@
        với % CIF = Σ phí đánh dấu CIF ÷ Tỷ giá tính thuế ÷ Tổng tiền hàng
    - Đề nghị thanh toán: gộp theo Người nhận; các dòng cùng Số HĐ gộp thành 1 dòng (cộng +VAT);
      dòng không có HĐ đứng riêng.
+
+   NHẬP HOÁ ĐƠN: invoice-parser.js đọc PDF (qua pdf.js) / XML → mỗi dòng hàng hoá dịch vụ thành 1 dòng phí.
+   Người nhận TT tự chọn theo MST bên bán (danh bạ tự học khi người dùng đổi người nhận).
 
    BẢO MẬT: tên công ty, MST, logo, người đề nghị, danh bạ STK và dữ liệu lô
    CHỈ lưu trong localStorage của trình duyệt. Code không chứa dữ liệu thật.
@@ -29,6 +33,8 @@
   const KEY_LOT = 'cost-payment-lot:v1';
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const nf2 = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 });
+  const mny = (n) => (isFinite(n) ? nf2.format(n) : '–');   // số tiền: giữ nguyên, tối đa 2 số lẻ
   const uid = () => Math.random().toString(36).slice(2, 9);
 
   const GROUPS = { KT: 'PHÍ KHAI THÁC HÀNG', OF: 'CƯỚC VẬN TẢI QT', BH: 'BẢO HIỂM HÀNG HOÁ' };
@@ -53,7 +59,7 @@
     ['BH', 'Phí bảo hiểm hàng hoá', '10', true],
   ].map(([group, name, vat, cif]) => ({ group, name, vat, cif: !!cif }));
 
-  const newFee = (o = {}) => ({ id: uid(), group: 'KT', name: '', pre: '', vat: '8', override: '', inv: '', date: '', note: '', payee: '', content: '', cif: false, pin: false, ...o });
+  const newFee = (o = {}) => ({ id: uid(), group: 'KT', name: '', pre: '', vat: '8', vatAmt: '', inv: '', date: '', note: '', payee: '', content: '', cif: false, pin: false, src: '', seller: '', sellerMst: '', desc: '', ...o });
   const newItem = (o = {}) => ({ id: uid(), code: '', name: '', color: '', qty: '', price: '', hs: '', nk: '', ...o });
 
   const DEFAULT_SETTINGS = {
@@ -64,6 +70,15 @@
   let S = { ...DEFAULT_SETTINGS, ...store.get(KEY_SET, {}) };
   if (!S.companies || !S.companies.length) S.companies = DEFAULT_SETTINGS.companies;
   let L = store.get(KEY_LOT, null) || makeLot();
+  migrate(L);
+  function migrate(lot) {           // bản cũ dùng "override" (+VAT gõ đè) → đổi sang Tiền VAT
+    (lot.fees || []).forEach((f) => {
+      if (f.vatAmt === undefined) f.vatAmt = String(f.override ?? '').trim() !== '' ? String(parseNum(f.override) - parseNum(f.pre)) : '';
+      delete f.override;
+    });
+    S.payees.forEach((p) => { if (p.msts === undefined) p.msts = ''; });
+    if (!S.nameGroup) S.nameGroup = {};
+  }
 
   function makeLot() {
     const tpl = S.template || BASE_TEMPLATE;
@@ -82,11 +97,9 @@
   const saveLot = () => store.set(KEY_LOT, L);
 
   /* ======================= TÍNH TOÁN ======================= */
-  const feePost = (f) => {
-    if (String(f.override).trim() !== '') return parseNum(f.override);
-    const pre = parseNum(f.pre);
-    return pre + Math.round(pre * (f.vat === '' ? 0 : parseNum(f.vat)) / 100);
-  };
+  const autoVat = (f) => (f.vat === '' ? 0 : parseNum(f.pre) * parseNum(f.vat) / 100);
+  const feeVat = (f) => (String(f.vatAmt ?? '').trim() !== '' ? parseNum(f.vatAmt) : autoVat(f));
+  const feePost = (f) => parseNum(f.pre) + feeVat(f);
 
   function calc() {
     const rate = parseNum(L.rate), taxRate = parseNum(L.taxRate) || rate;
@@ -134,10 +147,15 @@
       lines: lines.map((l) => {
         const custom = l.fees.find((f) => String(f.content).trim());
         const text = custom ? custom.content
-          : l.fees.length > 1 ? `Thanh toán HĐ ${l.inv} (${l.fees.length} khoản phí)` : l.fees[0].name;
+          : l.fees.length > 1 ? joinNames(l) : l.fees[0].name;
         return { inv: l.inv, amount: l.amount, content: text + lot };
       }),
     }));
+  }
+
+  function joinNames(l) {
+    const t = l.fees.map((f) => f.name).join(', ');
+    return t.length <= 110 ? t : `Thanh toán HĐ ${l.inv} (${l.fees.length} khoản phí)`;
   }
 
   /* ======================= GIAO DIỆN: LÔ HÀNG ======================= */
@@ -196,10 +214,11 @@
       return `
       <tr data-i="${i}" class="${head ? 'group-start' : ''}">
         <td><select data-k="group" class="grp">${Object.entries(GROUP_SHORT).map(([k, v]) => `<option value="${k}" ${k === f.group ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
-        <td><input data-k="name" value="${esc(f.name)}" list="feeNames" style="width:230px"></td>
+        <td><input data-k="name" value="${esc(f.name)}" list="feeNames" style="width:230px" title="${esc(f.desc || '')}">${f.src === 'inv' ? `<div class="src-tag">📄 ${esc(f.seller || '')}</div>` : ''}</td>
         <td><input data-k="pre" value="${esc(f.pre)}" class="in-num" inputmode="decimal" style="width:110px"></td>
-        <td><select data-k="vat" style="width:105px">${VATS.map(([v, t]) => `<option value="${v}" ${v === String(f.vat) ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
-        <td><input data-k="override" value="${esc(f.override)}" class="in-num" inputmode="decimal" style="width:110px" data-out="post"></td>
+        <td><select data-k="vat" style="width:105px">${(VATS.some(([v]) => v === String(f.vat)) ? VATS : [...VATS, [String(f.vat), f.vat + '%']]).map(([v, t]) => `<option value="${v}" ${v === String(f.vat) ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
+        <td><input data-k="vatAmt" value="${esc(f.vatAmt)}" class="in-num" inputmode="decimal" style="width:100px" data-out="vat"></td>
+        <td class="num" data-out="post"></td>
         <td><input data-k="inv" value="${esc(f.inv)}" style="width:95px"></td>
         <td><input data-k="date" type="date" value="${esc(f.date)}" style="width:140px"></td>
         <td><input data-k="note" value="${esc(f.note)}" list="noteNames" style="width:130px"></td>
@@ -222,17 +241,14 @@
     if (!tr || !k) return;
     const f = L.fees[+tr.dataset.i];
     f[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-    if (k === 'override') e.target.dataset.typed = '1';
-    if (k === 'group' && e.type === 'change') { renderFees(); }
+    // gõ tay: đổi phí hoặc thuế suất thì Tiền VAT tính lại (hoá đơn nhập từ file thì giữ đúng số HĐ)
+    if ((k === 'pre' || k === 'vat') && f.src !== 'inv') { f.vatAmt = ''; const inp = tr.querySelector('[data-k="vatAmt"]'); if (inp) inp.value = ''; }
+    if (e.type === 'change') {
+      if (k === 'payee' && f.sellerMst) learnPayee(f.sellerMst, f.payee);
+      if (k === 'group') { if (f.src === 'inv') S.nameGroup[normName(f.name)] = f.group; saveSet(); renderFees(); }
+    }
     update();
   }
-  $('feeBody').addEventListener('focusout', (e) => {
-    // ô +VAT: nếu người dùng gõ đúng bằng số tự tính thì bỏ "gõ đè"
-    if (e.target.dataset.k !== 'override') return;
-    const f = L.fees[+e.target.closest('tr').dataset.i];
-    const auto = parseNum(f.pre) + Math.round(parseNum(f.pre) * (f.vat === '' ? 0 : parseNum(f.vat)) / 100);
-    if (String(f.override).trim() === '' || parseNum(f.override) === auto) { f.override = ''; update(); }
-  });
   $('feeBody').addEventListener('click', (e) => {
     if (!e.target.closest('[data-del]')) return;
     L.fees.splice(+e.target.closest('tr').dataset.i, 1); renderFees(); update();
@@ -254,26 +270,25 @@
     document.querySelectorAll('#itemBody tr').forEach((tr) => {
       const r = c.items[+tr.dataset.i]; if (!r) return;
       tr.querySelector('[data-out="amount"]').textContent = r.amount ? fmt.num(r.amount, 2) : '';
-      tr.querySelector('[data-out="cost"]').textContent = r.cost == null ? '' : fmt.vnd(r.cost);
-      tr.querySelector('[data-out="costCif"]').textContent = r.costCif == null ? '' : fmt.vnd(r.costCif);
+      tr.querySelector('[data-out="cost"]').textContent = r.cost == null ? '' : mny(r.cost);
+      tr.querySelector('[data-out="costCif"]').textContent = r.costCif == null ? '' : mny(r.costCif);
     });
     $('itemFoot').innerHTML = `<tr><td colspan="3">TỔNG</td><td class="num">${fmt.num(c.qty, 0)}</td><td></td>
       <td class="num">${fmt.num(c.fob, 2)}</td><td colspan="5"></td></tr>`;
-    // bảng kê: ô +VAT hiển thị số tự tính khi chưa gõ đè
+    // bảng kê: Tiền VAT (để trống = tự tính, hiện mờ) và +VAT
     document.querySelectorAll('#feeBody tr').forEach((tr) => {
-      const f = L.fees[+tr.dataset.i]; const inp = tr.querySelector('[data-out="post"]');
-      if (document.activeElement === inp) return;
-      const post = feePost(f);
-      inp.value = String(f.override).trim() !== '' ? f.override : (post ? fmt.vnd(post) : '');
-      inp.classList.toggle('overridden', String(f.override).trim() !== '');
+      const f = L.fees[+tr.dataset.i];
+      const inp = tr.querySelector('[data-out="vat"]');
+      inp.placeholder = parseNum(f.pre) && f.vat !== '' ? mny(autoVat(f)) : '';
+      tr.querySelector('[data-out="post"]').textContent = parseNum(f.pre) ? mny(feePost(f)) : '';
     });
-    $('feeFoot').innerHTML = `<tr><td colspan="2">TỔNG CỘNG</td><td class="num">${fmt.vnd(c.totalPre)}</td><td></td>
-      <td class="num">${fmt.vnd(c.totalPost)}</td><td colspan="8"></td></tr>`;
+    $('feeFoot').innerHTML = `<tr><td colspan="2">TỔNG CỘNG</td><td class="num">${mny(c.totalPre)}</td><td></td>
+      <td class="num">${mny(c.totalPost - c.totalPre)}</td><td class="num">${mny(c.totalPost)}</td><td colspan="8"></td></tr>`;
     $('feeKpis').innerHTML = `
-      <div class="kpi"><div class="label">Phí làm hàng</div><div class="value">${fmt.vnd(c.sum.KT)}</div></div>
-      <div class="kpi"><div class="label">Cước vận tải QT</div><div class="value">${fmt.vnd(c.sum.OF)}</div></div>
-      <div class="kpi"><div class="label">Bảo hiểm</div><div class="value">${fmt.vnd(c.sum.BH)}</div></div>
-      <div class="kpi accent"><div class="label">Tổng trước VAT</div><div class="value">${fmt.vnd(c.totalPre)}</div></div>`;
+      <div class="kpi"><div class="label">Phí làm hàng</div><div class="value">${mny(c.sum.KT)}</div></div>
+      <div class="kpi"><div class="label">Cước vận tải QT</div><div class="value">${mny(c.sum.OF)}</div></div>
+      <div class="kpi"><div class="label">Bảo hiểm</div><div class="value">${mny(c.sum.BH)}</div></div>
+      <div class="kpi accent"><div class="label">Tổng trước VAT</div><div class="value">${mny(c.totalPre)}</div></div>`;
     $('paKpis').innerHTML = `
       <div class="kpi"><div class="label">Tổng tiền hàng</div><div class="value">${fmt.num(c.fob, 2)} $</div></div>
       <div class="kpi"><div class="label">Chi phí quy USD</div><div class="value">${fmt.num(c.rate ? c.totalPre / c.rate : 0, 2)} $</div></div>
@@ -335,12 +350,12 @@
           <table class="dn-table">
             <thead><tr><th style="width:42px">STT</th><th style="width:110px">Số hoá đơn</th><th>Nội dung</th><th style="width:130px" class="num">Số tiền</th></tr></thead>
             <tbody>${rows.map((l, i) => l
-              ? `<tr><td class="center">${i + 1}</td><td class="center">${esc(l.inv)}</td><td class="wrap">${esc(l.content)}</td><td class="num">${fmt.vnd(l.amount)}</td></tr>`
+              ? `<tr><td class="center">${i + 1}</td><td class="center">${esc(l.inv)}</td><td class="wrap">${esc(l.content)}</td><td class="num">${mny(l.amount)}</td></tr>`
               : '<tr class="empty"><td>&nbsp;</td><td></td><td></td><td></td></tr>').join('')}</tbody>
             <tfoot>
-              <tr><td colspan="3" class="center"><b>TỔNG CỘNG</b></td><td class="num"><b>${fmt.vnd(total)}</b></td></tr>
-              <tr class="plain"><td colspan="3" class="r">SỐ TIỀN ĐÃ TẠM ỨNG:</td><td class="num">${adv ? fmt.vnd(adv) : '-'}</td></tr>
-              <tr class="plain"><td colspan="3" class="r"><b>SỐ TIỀN CÒN LẠI PHẢI THANH TOÁN:</b></td><td class="num big"><b>${fmt.vnd(total - adv)}</b></td></tr>
+              <tr><td colspan="3" class="center"><b>TỔNG CỘNG</b></td><td class="num"><b>${mny(total)}</b></td></tr>
+              <tr class="plain"><td colspan="3" class="r">SỐ TIỀN ĐÃ TẠM ỨNG:</td><td class="num">${adv ? mny(adv) : '-'}</td></tr>
+              <tr class="plain"><td colspan="3" class="r"><b>SỐ TIỀN CÒN LẠI PHẢI THANH TOÁN:</b></td><td class="num big"><b>${mny(total - adv)}</b></td></tr>
             </tfoot>
           </table>
           <table class="dn-info">
@@ -402,6 +417,7 @@
         <td><input data-p="acc" value="${esc(p.acc)}" style="width:150px"></td>
         <td><input data-p="bank" value="${esc(p.bank)}" style="width:260px"></td>
         <td><input data-p="days" value="${esc(p.days)}" class="in-num" inputmode="numeric" style="width:70px"></td>
+        <td><input data-p="msts" value="${esc(p.msts)}" placeholder="MST, cách nhau dấu phẩy" style="width:220px"></td>
         <td><button class="btn btn-ghost btn-sm btn-icon" data-delp title="Xoá">✕</button></td>
       </tr>`).join('');
     $('templateInfo').textContent = S.template ? `Đang dùng mẫu riêng (${S.template.length} dòng).` : 'Đang dùng mẫu gốc.';
@@ -437,7 +453,7 @@
     if (!e.target.closest('[data-delp]')) return;
     S.payees.splice(+e.target.closest('tr').dataset.i, 1); saveSet(); renderSettings(); renderFees(); update();
   });
-  $('btnAddPayee').onclick = () => { S.payees.push({ key: '', holder: '', acc: '', bank: '', days: '3' }); saveSet(); renderSettings(); };
+  $('btnAddPayee').onclick = () => { S.payees.push({ key: '', holder: '', acc: '', bank: '', days: '3', msts: '' }); saveSet(); renderSettings(); };
 
   $('btnSettings').onclick = () => { renderSettings(); $('settingsCard').hidden = false; $('settingsCard').scrollIntoView({ behavior: 'smooth' }); };
   $('btnCloseSettings').onclick = () => { $('settingsCard').hidden = true; renderFees(); update(); };
@@ -461,7 +477,7 @@
     f.text().then((t) => {
       const d = JSON.parse(t);
       if (d.app !== 'cost-payment') throw new Error('File không đúng');
-      S = { ...DEFAULT_SETTINGS, ...d.settings }; if (d.lot) L = d.lot;
+      S = { ...DEFAULT_SETTINGS, ...d.settings }; if (d.lot) L = d.lot; migrate(L);
       saveSet(); saveLot(); renderAll(); renderSettings(); toast('Đã nạp bản sao lưu 🐼');
     }).catch(() => toast('Không đọc được file sao lưu')).finally(() => { e.target.value = ''; });
   };
@@ -539,8 +555,8 @@
     return out;
   }
 
-  $('fileEcus').onchange = async (e) => {
-    const file = e.target.files[0]; if (!file) return;
+  $('fileEcus').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) importEcus(f); };
+  async function importEcus(file) {
     try {
       const XLSX = await loadSheetJS();
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
@@ -564,23 +580,176 @@
       toast(`Đã nạp tờ khai: ${t.items.length} dòng hàng${t.freight ? ', cước' : ''}${t.insurance ? ', bảo hiểm' : ''} 🐼`);
     } catch (err) {
       toast(err.message || 'Không đọc được file');
-    } finally { e.target.value = ''; }
+    }
+  }
+
+  /* ======================= NHẬP HOÁ ĐƠN PDF / XML ======================= */
+  const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+  function loadPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    return new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = PDFJS + 'pdf.min.js';
+      s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js'; res(window.pdfjsLib); };
+      s.onerror = () => rej(new Error('Không tải được thư viện đọc PDF (kiểm tra mạng)'));
+      document.head.append(s);
+    });
+  }
+  async function readPdf(file) {
+    const pdfjs = await loadPdfJs();
+    const doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+    const pages = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+      const tc = await (await doc.getPage(i)).getTextContent();
+      pages.push(tc.items.map((t) => ({ s: t.str, x: t.transform[4], y: t.transform[5], w: t.width, h: Math.hypot(t.transform[2], t.transform[3]) || t.height })));
+    }
+    return InvoiceParser.fromPdfPages(pages);
+  }
+
+  const normName = (s) => String(s || '').toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/^\s*(phụ\s*)?phí\s+/, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const sameName = (a, b) => {
+    const x = normName(a), y = normName(b);
+    if (!x || !y) return false;
+    if (x === y) return true;
+    const [sh, lg] = x.length < y.length ? [x, y] : [y, x];
+    return sh.length >= 6 && lg.includes(sh) && sh.length / lg.length >= 0.7;   // gần như trùng tên
   };
+  const mstList = (p) => String(p.msts || '').split(/[,;\s]+/).filter(Boolean);
+  const shortName = (n) => String(n || '').replace(/^(TỔNG\s+)?CÔNG\s*TY\s*/i, '').replace(/^(TNHH|CỔ\s*PHẦN|CP)\s*(MTV\s*)?/i, '')
+    .replace(/\s*-?\s*CHI\s*NHÁNH.*$/i, '').replace(/\s+/g, ' ').trim() || n;
+
+  function learnPayee(mst, key) {            // hoá đơn của MST này từ nay gán cho người nhận "key"
+    S.payees.forEach((p) => { p.msts = mstList(p).filter((m) => m !== mst).join(', '); });
+    const p = S.payees.find((x) => x.key === key);
+    if (p) { p.msts = [...mstList(p), mst].join(', '); toast(`Đã nhớ: hoá đơn MST ${mst} → ${key}`); }
+    saveSet();
+  }
+  function payeeFor(inv) {
+    if (!inv.sellerMst) return '';
+    const hit = S.payees.find((p) => mstList(p).includes(inv.sellerMst));
+    if (hit) return hit.key;
+    let key = shortName(inv.seller) || inv.sellerMst; let n = 2;
+    while (S.payees.some((p) => p.key === key)) key = `${shortName(inv.seller)} (${n++})`;
+    S.payees.push({ key, holder: inv.seller || '', acc: inv.bankAcc || '', bank: inv.bankName || '', days: '30', msts: inv.sellerMst });
+    saveSet();
+    return key;
+  }
+  function groupFor(desc) {
+    const learned = S.nameGroup[normName(desc)];
+    if (learned) return learned;
+    if (/bảo\s*hiểm|\bICC\b/i.test(desc)) return 'BH';
+    if (/cước\s*(vận\s*(tải|chuyển)\s*)?(biển|quốc\s*tế)|ocean|sea\s*freight/i.test(desc)) return 'OF';
+    return 'KT';
+  }
+  function cleanName(desc, group) {
+    let n = String(desc || '').replace(/\s*(Tuyến\s*đường|BKS|Biển\s*số|Số\s*con'?t|\(Số\s*hiệu|Số\s*hiệu\s*tàu)[\s\S]*$/i, '').trim();
+    n = n.replace(/\s+\S*\d+\/\d+\/\S*/g, '').trim();                       // bỏ số đơn bảo hiểm / chứng từ
+    if (group === 'BH' && !/bảo\s*hiểm/i.test(n)) n = `Phí bảo hiểm hàng hoá (${n})`;
+    return n || desc;
+  }
+
+  function addInvoice(inv, fileName) {
+    const log = { file: fileName, inv };
+    if (!inv.lines.length) { log.status = 'err'; log.msg = inv.warnings.join('; ') || 'Không đọc được'; return log; }
+    if (L.fees.some((f) => f.src === 'inv' && f.inv === inv.no && f.sellerMst === inv.sellerMst)) {
+      log.status = 'dup'; log.msg = 'Hoá đơn này đã có trong bảng kê'; return log;
+    }
+    const co = S.companies.find((c) => c.id === L.companyId);
+    if (co && co.mst && inv.buyerMst && co.mst.replace(/\D/g, '') !== inv.buyerMst.replace(/\D/g, '')) log.warn = `MST người mua ${inv.buyerMst} khác công ty đang chọn`;
+    const payee = payeeFor(inv);
+    inv.lines.forEach((ln) => {
+      const group = groupFor(ln.desc);
+      const name = cleanName(ln.desc, group);
+      const cif = (group === 'OF' && /cước/i.test(ln.desc)) || group === 'BH';
+      const data = {
+        group, name, pre: String(ln.pre), vat: ln.rate == null ? '' : String(ln.rate), vatAmt: String(ln.vat),
+        inv: inv.no, date: inv.date || '', payee, src: 'inv', seller: shortName(inv.seller), sellerMst: inv.sellerMst, desc: ln.desc, cif,
+      };
+      // ưu tiên điền vào dòng mẫu còn trống (cùng tên / dòng cước-bảo hiểm đã có số từ tờ khai)
+      const empty = (f) => f.src !== 'inv' && !String(f.inv).trim();
+      const slot = L.fees.find((f) => empty(f) && !parseNum(f.pre) && sameName(f.name, name))
+        || (cif && L.fees.find((f) => empty(f) && f.group === group && f.cif && (!parseNum(f.pre) || near(parseNum(f.pre), ln.pre))))
+        || L.fees.find((f) => empty(f) && f.pin === false && parseNum(f.pre) && near(parseNum(f.pre), ln.pre) && sameName(f.name, name));
+      if (slot) {
+        const keep = { note: slot.note, content: slot.content, pin: false };
+        Object.assign(slot, data, keep, { name: slot.name || name });
+      } else L.fees.push(newFee(data));
+    });
+    log.status = inv.check === false ? 'warn' : 'ok';
+    log.payee = payee;
+    return log;
+  }
+  const near = (a, b) => Math.abs(a - b) < 0.005;
+
+  let importLog = [];
+  async function importFiles(files) {
+    files = [...files];
+    if (!files.length) return;
+    const xlsx = files.filter((f) => /\.xlsx?$/i.test(f.name));
+    const invs = files.filter((f) => /\.(pdf|xml)$/i.test(f.name));
+    for (const f of xlsx) await importEcus(f);
+    if (!invs.length) return;
+    toast(`Đang đọc ${invs.length} hoá đơn…`);
+    const logs = [];
+    for (const f of invs) {
+      try {
+        const inv = /\.xml$/i.test(f.name) ? InvoiceParser.fromXml(await f.text()) : await readPdf(f);
+        logs.push(addInvoice(inv, f.name));
+      } catch (err) {
+        logs.push({ file: f.name, status: 'err', msg: err.message || 'Không đọc được file' });
+      }
+    }
+    importLog = logs.concat(importLog).slice(0, 30);
+    saveLot(); renderFees(); update(); renderImportLog();
+    const ok = logs.filter((l) => l.status === 'ok' || l.status === 'warn').length;
+    toast(`Đã nhập ${ok}/${invs.length} hoá đơn 🐼`);
+  }
+  function renderImportLog() {
+    const icon = { ok: '✅', warn: '⚠️', dup: '↩️', err: '❌' };
+    $('importLog').innerHTML = importLog.length ? `
+      <div class="log-head"><b>Hoá đơn vừa nhập</b><button class="btn btn-ghost btn-sm" id="btnClearLog">Ẩn</button></div>
+      ${importLog.map((l) => {
+        const i = l.inv || {};
+        return `<div class="log-row ${l.status}">${icon[l.status]} <b>${esc(i.no || l.file)}</b>
+          ${i.seller ? ' · ' + esc(shortName(i.seller)) : ''}${i.date ? ' · ' + esc(dateVN(new Date(i.date + 'T00:00:00'))) : ''}
+          ${i.lines && i.lines.length ? ` · ${i.lines.length} dòng · <b>${mny(i.sum)}</b>` : ''}
+          ${l.status === 'ok' ? ' · khớp tổng hoá đơn' : ''}${l.payee ? ' → ' + esc(l.payee) : ''}
+          ${l.msg ? ` <span class="muted">— ${esc(l.msg)}</span>` : ''}
+          ${l.status === 'warn' ? ` <span class="warn">— Tổng các dòng ${mny(i.sum)} ≠ tổng HĐ ${mny(i.total)}, kiểm tra lại</span>` : ''}
+          ${l.warn ? ` <span class="warn">— ${esc(l.warn)}</span>` : ''}</div>`;
+      }).join('')}` : '';
+    const b = $('btnClearLog'); if (b) b.onclick = () => { importLog = []; renderImportLog(); };
+  }
+  ['fileInvoice', 'fileInvoice2'].forEach((id) => $(id).addEventListener('change', (e) => { const fs = [...e.target.files]; e.target.value = ''; importFiles(fs); }));
+  // kéo thả: cả trang đều nhận file
+  const dz = $('dropzone');
+  ['dragenter', 'dragover'].forEach((ev) => document.addEventListener(ev, (e) => {
+    if (![...(e.dataTransfer?.types || [])].includes('Files')) return;
+    e.preventDefault(); dz.classList.add('over');
+  }));
+  ['dragleave', 'drop'].forEach((ev) => document.addEventListener(ev, (e) => {
+    if (ev === 'dragleave' && e.relatedTarget) return;
+    dz.classList.remove('over');
+  }));
+  document.addEventListener('drop', (e) => {
+    if (!e.dataTransfer?.files?.length) return;
+    e.preventDefault(); importFiles(e.dataTransfer.files);
+  });
 
   /* ======================= XUẤT EXCEL ======================= */
   $('btnExport').onclick = () => {
     const c = calc();
     const sheets = [];
     const bk = [['LÔ HÀNG', L.code], ['SỐ LƯỢNG CONT', L.cont], ['CẢNG ĐI', L.port], ['SỐ TỜ KHAI', L.decl], [],
-      ['NHÓM', 'LOẠI PHÍ', 'PHÍ -VAT', 'VAT %', '+VAT', 'NOTE/Ghi chú', 'Hoá đơn số', 'Ngày hoá đơn', 'Người nhận TT', 'Thông tin chuyển khoản']];
+      ['NHÓM', 'LOẠI PHÍ', 'PHÍ -VAT', 'VAT %', 'TIỀN VAT', '+VAT', 'NOTE/Ghi chú', 'Hoá đơn số', 'Ngày hoá đơn', 'Người nhận TT', 'Thông tin chuyển khoản']];
     L.fees.forEach((f) => {
       const p = S.payees.find((x) => x.key === f.payee);
       bk.push([GROUPS[f.group], f.name, parseNum(f.pre) || null, f.vat === '' ? 'không HĐ' : parseNum(f.vat) / 100,
-        feePost(f) || null, f.note, f.inv, f.date ? dateVN(new Date(f.date + 'T00:00:00')) : '', f.payee,
+        parseNum(f.pre) ? feeVat(f) : null, feePost(f) || null, f.note, f.inv, f.date ? dateVN(new Date(f.date + 'T00:00:00')) : '', f.payee,
         p ? [p.holder, p.acc && 'STK: ' + p.acc, p.bank].filter(Boolean).join(' - ') : '']);
     });
-    bk.push(['TỔNG CỘNG', '', c.totalPre, '', c.totalPost]);
-    sheets.push({ name: 'BẢNG KÊ CHI PHÍ', rows: bk, colWidths: [22, 36, 14, 9, 14, 18, 13, 13, 22, 50] });
+    bk.push(['TỔNG CỘNG', '', c.totalPre, '', c.totalPost - c.totalPre, c.totalPost]);
+    sheets.push({ name: 'BẢNG KÊ CHI PHÍ', rows: bk, colWidths: [22, 36, 14, 9, 13, 14, 18, 13, 13, 22, 50] });
 
     const pa = [['PHƯƠNG ÁN GIÁ'], ['CẢNG ĐI:', L.port], ['LÔ HÀNG:', L.code], ['TỶ GIÁ:', c.rate], ['CONTAINER QTY', L.cont], [],
       ['ITEM CODE', 'Tên hàng', 'Color', 'QTY', 'UNIT PRICE', 'TOTAL AMOUNT', 'Hs code', '% Thuế NK', 'GIÁ VỐN DỰ KIẾN', 'GIÁ VỐN (NK theo CIF)']];
@@ -588,7 +757,7 @@
       if (!it.code && !it.price) return;
       const r = c.items[i];
       pa.push([it.code, it.name, it.color, parseNum(it.qty), parseNum(it.price), r.amount, it.hs, parseNum(it.nk) / 100,
-        r.cost == null ? null : Math.round(r.cost), r.costCif == null ? null : Math.round(r.costCif)]);
+        r.cost, r.costCif]);
     });
     pa.push(['', '', 'TỔNG', c.qty, '', c.fob], [],
       ['', '', '', '', 'OF', c.rate ? c.sum.OF / c.rate : 0],

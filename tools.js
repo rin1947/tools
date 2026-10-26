@@ -18,7 +18,7 @@ window.TOOLS = [
     id: 'cost-payment',
     name: 'PA giá & Đề nghị thanh toán',
     icon: '🧾',
-    description: 'Nhập chi phí lô hàng theo hoá đơn → bảng kê, giá vốn từng mã và phiếu đề nghị thanh toán cho từng người nhận. Nạp tờ khai ECUS.',
+    description: 'Thả hoá đơn PDF/XML + tờ khai ECUS → bảng kê chi phí đúng số HĐ, giá vốn từng mã, phiếu đề nghị thanh toán theo người nhận.',
     path: 'tools/cost-payment/index.html',
     status: 'live',
     category: 'Nhập khẩu',
