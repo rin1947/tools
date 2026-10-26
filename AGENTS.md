@@ -105,19 +105,19 @@ Tên thương hiệu hiển thị là **Gấu Bép** (không dùng tên công ty
 **Giao diện, style, logic, dữ liệu luôn ở file riêng.** Không nhét CSS/JS/dữ liệu vào `index.html`.
 Người dùng có thể gửi tool dạng **một file HTML** (vd bản landed cost mới) → AI phải **tách ra** đúng cấu trúc trên trước khi commit.
 
-### Tool `landed-cost` (bản v9 của người dùng)
+### Tool `landed-cost` (bản v10 của người dùng)
 
 Phát triển riêng bởi người dùng, đã tách thành:
 | File | Nội dung |
 |---|---|
 | `index.html` | Giao diện: 4 tab (Tính giá, Tra cứu HS, Thay đổi & cập nhật, Cách tính) |
 | `style.css` | Style: khối `:root` ánh xạ biến cũ (`--bg, --ink, --accent, --steel…`) sang bảng màu Gấu Bép + khối "Lớp giao diện Gấu Bép" cuối file |
-| `app.js` | Logic gốc v9 (giữ nguyên) + 2 dòng cuối gọi `GauBep.mountLayout()` và gắn gấu trúc vào tiêu đề |
+| `app.js` | Logic gốc v10 (giữ nguyên) + 2 dòng cuối gọi `GauBep.mountLayout()` và gắn gấu trúc vào tiêu đề |
 | `tariff-data.js` | Biểu thuế XNK nén gzip + base64: `window.LC_TARIFF_B64` (app.js đọc ở 1 chỗ duy nhất) |
 | `Mau-Import-San-Pham.xlsx` | File mẫu import rỗng (được phép commit, xem `.gitignore`) |
 
-- **Không** viết lại logic v9; **không** sửa `tariff-data.js` trừ khi được yêu cầu cập nhật biểu thuế.
-- Khi người dùng gửi **phiên bản mới** (v10…, thường là 1 file HTML): tách `<style>` → `style.css`, `<script id="tdata">` → `tariff-data.js`, script chính → `app.js` (đổi `document.getElementById('tdata').textContent` thành `window.LC_TARIFF_B64`), phần còn lại → `index.html`; rồi áp lại lớp giao diện Gấu Bép như trên. **Chạy bản gốc và bản tách, so bảng Tổng hợp phải ra cùng số.** Cập nhật `tools.js`, README, ngày `updated`.
+- **Không** viết lại logic v10; **không** sửa `tariff-data.js` trừ khi được yêu cầu cập nhật biểu thuế.
+- Khi người dùng gửi **phiên bản mới** (v11…, thường là 1 file HTML): tách `<style>` → `style.css`, `<script id="tdata">` → `tariff-data.js`, script chính → `app.js` (đổi `document.getElementById('tdata').textContent` thành `window.LC_TARIFF_B64`), phần còn lại → `index.html`; rồi áp lại lớp giao diện Gấu Bép như trên. **Chạy bản gốc và bản tách, so bảng Tổng hợp phải ra cùng số.** Cập nhật `tools.js`, README, ngày `updated`.
 
 ## 4. Quy tắc giao diện (bắt buộc)
 

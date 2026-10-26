@@ -1,11 +1,11 @@
 /* =========================================================
-   Landed Cost v9 — LOGIC (tính toán, tra cứu HS, nhập/xuất Excel)
+   Landed Cost v10 — LOGIC (tính toán, tra cứu HS, nhập/xuất Excel)
    Giao diện: index.html · Style: style.css · Dữ liệu biểu thuế: tariff-data.js
    Công thức chi tiết: xem tab "Cách tính" trong tool.
    ========================================================= */
 "use strict";
 /* ---------------- storage helpers ---------------- */
-const TOOL_VER='v9 · 24/10/2026';
+const TOOL_VER='v10 · 26/10/2026';
 const LS={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}};
 const idb={open(){return new Promise((res,rej)=>{try{const r=indexedDB.open('landedcost',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}})},
   async get(k){try{const db=await this.open();return await new Promise(r=>{const q=db.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>r(q.result);q.onerror=()=>r(undefined)})}catch(e){return undefined}},
@@ -76,10 +76,12 @@ function classRule(p){const h=String(p.hs||'');const n=norm(p.name);
   for(const r of CLASS_RULES){if(r.excl&&r.excl(p))continue;if(h&&r.hs.some(x=>h.startsWith(x)))return r}
   for(const r of CLASS_RULES){if(r.excl&&r.excl(p))continue;if(r.re.test(n))return r}return null}
 function specCode(p){const r=classRule(p);const v=pnum(p.spec);if(!r||!(v>0))return null;const c=r.pick(v,p);return row(c)?c:null}
+const POL_LIST=['Ningbo','Shanghai','Shenzhen (Yantian)','Shenzhen (Shekou)','Guangzhou (Nansha)','Guangzhou (Huangpu)','Foshan','Zhongshan','Jiangmen','Xiamen','Qingdao','Tianjin','Dalian','Fuzhou','Lianyungang'];
 function autoDesc(p){
   const w=pnum(p.weight);const name=String(p.name||'').trim();const parts=[];
   if(isAirCooler(p)&&!/lam mat khong khi bang bay hoi/.test(norm(name))){parts.push('Máy làm mát không khí bằng bay hơi'+(name?' ('+name+')':''))}else if(name)parts.push(name);
   if(p.code)parts.push('model '+String(p.code).trim());
+  if(String(p.tech||'').trim())parts.push(String(p.tech).trim().replace(/[.;,\s]+$/,''));
   if(w>0)parts.push('trọng lượng '+fmt(w,w%1?1:0)+' kg/chiếc'+(isAirCooler(p)?(w>CV10442.limit?' (loại trên 20 kg)':' (loại không quá 20 kg)'):''));
   {const cr=classRule(p);const v=pnum(p.spec);if(cr&&v>0)parts.push(cr.desc(v))}
   parts.push('mới 100%');
@@ -394,6 +396,10 @@ function cardHTML(p,i){
       <label class="f">Xuất xứ<select id="p${p.id}_origin" data-k="origin">${originOpts(p.origin)}</select></label>
       <label class="f">C/O ưu đãi<select id="p${p.id}_co" data-k="co"><option value="yes"${p.co!=='no'?' selected':''}>Có C/O</option><option value="no"${p.co==='no'?' selected':''}>Không C/O</option></select><span class="h" data-out="coh"></span></label>
       <div class="f hsfield wide"><label class="f">Mã HS<input id="p${p.id}_hs" data-k="hs" class="mono" autocomplete="off" placeholder="Gõ mã hoặc từ khoá" value="${esc(fmtHS(p.hs))}"></label><div class="sug" hidden></div><div class="hsdesc" data-out="hsdesc"></div></div>
+      <label class="f wide">Tên nhà máy<input id="p${p.id}_factory" data-k="factory" placeholder="Tên nhà máy / nhà cung cấp" value="${esc(p.factory||'')}"></label>
+      <label class="f">Cảng đi<input id="p${p.id}_pol" data-k="pol" list="polList" placeholder="vd Ningbo" value="${esc(p.pol||'')}"></label>
+      <label class="f" style="grid-column:1/-1">Địa chỉ nhà máy<input id="p${p.id}_faddr" data-k="faddr" value="${esc(p.faddr||'')}"></label>
+      <label class="f" style="grid-column:1/-1">Thông số kỹ thuật<input id="p${p.id}_tech" data-k="tech" placeholder="vd 220V/50Hz, 180W, bình nước 40L, 3 tốc độ gió" value="${esc(p.tech||'')}"><span class="h">Được đưa vào mô tả hàng hoá khai báo</span></label>
       <div class="f" style="grid-column:1/-1"><label class="f">Mô tả hàng hoá (khai báo) <span class="h" data-out="descsrc"></span><input id="p${p.id}_desc" data-k="desc" value="${esc(descOf(p))}"></label></div>
     </div>
     <details class="adv"${(p.group||p.qty||p.annual)?' open':''}><summary>Số lượng lô, ghép cont, phân bổ năm</summary>
@@ -448,7 +454,7 @@ function recalc(){
   R.forEach(res=>{const card=document.querySelector(`.pcard[data-id="${res.p.id}"]`);if(!card)return;const p=res.p;
     {const cr=classRule(p);const sb=card.querySelector('[data-out="specbox"]');if(sb){sb.hidden=!cr&&!p.spec;card.querySelector('[data-out="speclab"]').textContent=cr?cr.param+' ('+cr.unit+')':'Thông số phân loại';card.querySelector('[data-out="spech"]').textContent=cr?'Tool chọn mã '+cr.label.toLowerCase()+' theo ngưỡng':'';const si=card.querySelector('[data-k="spec"]');si.placeholder=cr?'Bắt buộc để chọn mã':''}}
     const di=card.querySelector('[data-k="desc"]');if(di&&!p.descManual&&document.activeElement!==di)di.value=autoDesc(p);
-    const ds=card.querySelector('[data-out="descsrc"]');if(ds)ds.innerHTML=p.descManual?'· bạn tự sửa · <button type="button" class="ghost" data-act="descauto" style="padding:0 4px;font-size:11px">dùng lại tự động</button>':'· tự tạo từ tên, model, trọng lượng, thông số';
+    const ds=card.querySelector('[data-out="descsrc"]');if(ds)ds.innerHTML=p.descManual?'· bạn tự sửa · <button type="button" class="ghost" data-act="descauto" style="padding:0 4px;font-size:11px">dùng lại tự động</button>':'· tự tạo từ tên, model, thông số kỹ thuật, trọng lượng';
     const hsd=card.querySelector('[data-out="hsdesc"]');hsd.textContent=res.R?shortDesc(res.hs):(p.hs?'Mã không có trong biểu thuế':'Chưa chọn mã HS');
     const {a}=checksOf(p);
     card.querySelector('[data-out="checks"]').innerHTML=Object.keys(CKL).map(k=>`<label class="ck${a[k]?' auto':''}"><input type="checkbox" data-ck="${k}"${res.checks[k]?' checked':''}> ${CKL[k]} <span class="src">${a[k]?esc(a[k]):(p.man&&k in p.man?'tự chọn':'không yêu cầu')}</span></label>`).join('');
@@ -638,7 +644,7 @@ async function exportXlsx(){
   if(!window.ExcelJS){toast('Chưa tải được thư viện Excel — kiểm tra kết nối mạng rồi thử lại.');return}
   const R=compute(P,S);const wb=new ExcelJS.Workbook();wb.creator='Landed Cost Nhập Khẩu';
   const single=true; /* file Excel luôn theo lựa chọn C/O của từng sản phẩm */
-  const COLS=[['stt','STT',5],['img','Hình ảnh',12],['code','Mã sản phẩm',14],['name','Tên sản phẩm',26],['desc','Mô tả hàng hoá',44],['wt','Trọng lượng (kg/chiếc)',10],['spec','Thông số phân loại',11],['moq','MOQ (sp/cont)',10],['cont','Loại cont',8],['hs','Mã HS',12],['org','Xuất xứ',12],['qty','SL lô',9],
+  const COLS=[['stt','STT',5],['img','Hình ảnh',12],['code','Mã sản phẩm',14],['name','Tên sản phẩm',26],['desc','Mô tả hàng hoá',44],['wt','Trọng lượng (kg/chiếc)',10],['spec','Thông số phân loại',11],['moq','MOQ (sp/cont)',10],['cont','Loại cont',8],['hs','Mã HS',12],['org','Xuất xứ',12],['pol','Cảng đi',14],['fac','Tên nhà máy',24],['faddr','Địa chỉ nhà máy',30],['tech','Thông số kỹ thuật',30],['qty','SL lô',9],
     ['fobu','Giá FOB (USD)',11],['fobv','Giá FOB (VND)',13],['fr','Cước + khai thác',12],['ins','Bảo hiểm',10],['cif','Trị giá tính thuế (CIF)',14],...(single?[['coy','C/O ưu đãi',22],['dr','Thuế NK %',8],['d','Thuế NK',13]]:[['drN','Thuế NK % không C/O',9],['dN','Thuế NK không C/O',13],['drC','Thuế NK % có C/O',9],['fta','FTA áp dụng',16],['dC','Thuế NK có C/O',13]]),['t04','KT QCVN 04',11],['t09','KT QCVN 09',11],['tHs','KT hiệu suất NL',11],['tAt','KT ATTP',11],['oth','Phí khác',10],
     ...(single?[['l','Landed cost chưa VAT',18]]:[['lN','Landed cost chưa VAT – không C/O',17],['lC','Landed cost chưa VAT – có C/O',17]]),['vat','VAT NK %',7],['vatv',single?'VAT NK phải nộp':'VAT NK phải nộp (có C/O)',14],['lv','Landed cost gồm VAT',18],['note','Ghi chú',60]];
   const L={};COLS.forEach((c,i)=>L[c[0]]=colL(i+1));const last=colL(COLS.length);
@@ -659,7 +665,7 @@ async function exportXlsx(){
   R.forEach((r,i)=>{const n=8+i;const p=r.p;const c=k=>L[k]+n;
     const notes=r.warn.map(w=>w[1].replace(/<button[^>]*>.*?<\/button>/g,'').replace(/<[^>]+>/g,'')).join(' | ');
     const ck=['q04','q09','hsnl','attp'].filter(k=>r.checks[k]).map(k=>CKL[k]).join(', ');
-    const V={cont:(p.cont||'40')+"'",stt:i+1,img:'',code:p.code,name:p.name,desc:descOf(p),wt:pnum(p.weight)||'',spec:pnum(p.spec)||'',moq:pnum(p.moq)||0,hs:fmtHS(r.hs),org:(OMAP[p.origin]||{}).name||'',qty:r.q,
+    const V={pol:p.pol||'',fac:p.factory||'',faddr:p.faddr||'',tech:p.tech||'',cont:(p.cont||'40')+"'",stt:i+1,img:'',code:p.code,name:p.name,desc:descOf(p),wt:pnum(p.weight)||'',spec:pnum(p.spec)||'',moq:pnum(p.moq)||0,hs:fmtHS(r.hs),org:(OMAP[p.origin]||{}).name||'',qty:r.q,
       fobu:pnum(p.fob)||0,fobv:{formula:`${c('fobu')}*$C$3`,result:r.fobV},fr:Math.round(r.frV),ins:{formula:`${c('fobv')}*$C$4`,result:r.insV},
       cif:{formula:`${c('fobv')}+${c('fr')}*${S.frPct/100}+${c('ins')}`,result:r.cifV},
       drN:(r.dutyRateNo||0)/100,dN:{formula:`${c('cif')}*${c('drN')}`,result:r.dutyNo},drC:(r.dutyRateCO||0)/100,fta:r.R&&r.R.pref&&!r.R.pref.noGain?r.R.pref.label:'Không',dC:{formula:`${c('cif')}*${c('drC')}`,result:r.dutyCO},
@@ -674,7 +680,7 @@ async function exportXlsx(){
     ['fobv','fr','ins','cif','dN','dC','d','t04','t09','tHs','tAt','oth','lN','lC','l','vatv','lv','moq','qty'].filter(k=>L[k]).forEach(k=>ws.getCell(c(k)).numFmt='#,##0');
     ['drN','drC','dr','vat'].filter(k=>L[k]).forEach(k=>ws.getCell(c(k)).numFmt='0.0%');ws.getCell(c('fobu')).numFmt='#,##0.00';ws.getCell(c('wt')).numFmt='#,##0.0';
     ['lN','lC','l','lv'].filter(k=>L[k]).forEach(k=>{ws.getCell(c(k)).font={bold:true};ws.getCell(c(k)).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFBEDE5'}}});
-    ['name','desc','note'].forEach(k=>ws.getCell(c(k)).alignment={wrapText:true,vertical:'middle'});
+    ['name','desc','note','fac','faddr','tech'].forEach(k=>ws.getCell(c(k)).alignment={wrapText:true,vertical:'middle'});
     if(p.img){const id=wb.addImage({base64:p.img,extension:'jpeg'});ws.addImage(id,{tl:{col:1.08,row:n-1+0.06},ext:{width:76,height:76}})}
   });
   ws.autoFilter={from:{row:7,column:1},to:{row:7,column:COLS.length}};
@@ -694,11 +700,11 @@ async function exportXlsx(){
 /* ---------------- Nhập từ Excel ---------------- */
 const IMP_COLS=[
  ['img','Hình ảnh','Chèn ảnh nổi vào ô (Insert › Pictures › Place over cells)',14],
- ['code','Mã SP *','Bắt buộc',14],['name','Tên sản phẩm *','Bắt buộc',30],['fob','Giá FOB (USD) *','Bắt buộc, số',12],['moq','MOQ (sp đầy 1 cont) *','Bắt buộc, số',12],
- ['cont','Loại cont (40/20)','Trống = 40',10],['origin','Xuất xứ','Chọn trong danh sách; trống = Trung Quốc',16],['co','C/O ưu đãi (Có/Không)','Trống = Có',12],
+ ['code','Mã SP *','Bắt buộc',14],['name','Tên sản phẩm *','Bắt buộc',30],['tech','Thông số kỹ thuật','vd 220V/50Hz, 180W, bình nước 40L — đưa vào mô tả hàng hoá',34],['fob','Giá FOB (USD) *','Bắt buộc, số',12],['moq','MOQ (sp đầy 1 cont) *','Bắt buộc, số',12],
+ ['cont','Loại cont (40/20)','Trống = 40',10],['origin','Xuất xứ','Chọn trong danh sách; trống = Trung Quốc',16],['factory','Tên nhà máy','Tên nhà máy / nhà cung cấp',26],['faddr','Địa chỉ nhà máy','',36],['pol','Cảng đi','Chọn gợi ý hoặc gõ tên cảng khác',16],['co','C/O ưu đãi (Có/Không)','Trống = Có',12],
  ['hs','Mã HS (8 số)','Trống = tool tự gợi ý theo tên',13],['weight','Trọng lượng (kg/chiếc)','Bắt buộc với quạt điều hòa',12],['spec','Thông số phân loại','Máy giặt/sấy: kg vải khô/lần · Quạt: W · Điều hòa: kW lạnh · Tủ lạnh: lít',14],
  ['qty','SL nhập lô này','Trống = MOQ',11],['group','Nhóm ghép cont','Cùng chữ = đi chung cont',11],['annual','SL nhập dự kiến/năm','Trống = SL lô',12],['desc','Mô tả hàng hoá','Trống = tool tự tạo',40]];
-const HDR_RULES=[[/^(ma )?hs\b|hs code/,'hs'],[/hinh|^anh|image|photo/,'img'],[/^ma (sp|san pham|hang)|sku|model|^code|^ma$/,'code'],[/^ten|product|^name/,'name'],
+const HDR_RULES=[[/^(ma )?hs\b|hs code/,'hs'],[/hinh|^anh|image|photo/,'img'],[/dia chi|address/,'faddr'],[/nha may|factory|supplier|nha cung cap|^ncc/,'factory'],[/^cang|port of loading|^pol\b|loading port/,'pol'],[/ky thuat|specification|technical/,'tech'],[/^ma (sp|san pham|hang)|sku|model|^code|^ma$/,'code'],[/^ten|product|^name/,'name'],
  [/fob|don gia|unit price|^price/,'fob'],[/moq|day 1 cont/,'moq'],[/loai cont|container|^cont/,'cont'],[/xuat xu|origin/,'origin'],[/^c\/?o\b|uu dai/,'co'],
  [/trong luong|weight/,'weight'],[/thong so|suc chua|cong suat|dung tich|spec/,'spec'],[/du kien|\/nam|annual/,'annual'],[/^sl|so luong|qty/,'qty'],[/ghep|group/,'group'],[/^mo ta|description/,'desc']];
 const ORG_ALIAS={CN:['tq','china','trung quoc','trung'],TH:['thai','thailand'],MY:['malay','malaysia'],ID:['indo','indonesia'],SG:['singapore'],PH:['phil'],KH:['campuchia','cambodia'],LA:['lao','laos'],MM:['myanmar'],BN:['brunei'],
@@ -754,7 +760,7 @@ async function readImport(file){
   for(let r=hr+1;r<A.length;r++){const rw=A[r]||[];const g=f=>map[f]!=null?cellText(rw[map[f]]):'';const excelRow=r+off.r+1;
     const code=g('code'),name=g('name');if(!code&&!name)continue;
     const o=matchOrigin(g('origin'));const hsRaw=g('hs').replace(/\D/g,'');
-    const p={code,name,fob:numStr(g('fob')),moq:numStr(g('moq')),cont:parseCont(g('cont')),origin:o.id,co:parseCo(g('co')),hs:'',weight:numStr(g('weight')),spec:numStr(g('spec')),qty:numStr(g('qty')),group:g('group'),annual:numStr(g('annual')),img:'',man:{}};
+    const p={code,name,tech:g('tech'),factory:g('factory'),faddr:g('faddr'),pol:g('pol'),fob:numStr(g('fob')),moq:numStr(g('moq')),cont:parseCont(g('cont')),origin:o.id,co:parseCo(g('co')),hs:'',weight:numStr(g('weight')),spec:numStr(g('spec')),qty:numStr(g('qty')),group:g('group'),annual:numStr(g('annual')),img:'',man:{}};
     const d=g('desc');if(d){p.desc=d;p.descManual=true}
     const msgs=[];
     if(hsRaw.length===8&&row(hsRaw))p.hs=hsRaw;
@@ -797,8 +803,10 @@ async function buildTemplate(){
   IMP_COLS.forEach((c,i)=>{const cell=hr.getCell(i+1);cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:/\*/.test(c[1])?'FFC4501B':'FF1F5F7A'}};ws.getColumn(i+1).width=c[3]});
   const L={};IMP_COLS.forEach((c,i)=>L[c[0]]=colL(i+1));
   const dm=wb.addWorksheet('DanhMuc');dm.getCell('A1').value='Xuất xứ';dm.getCell('A1').font={bold:true};ORIGINS.forEach((o,i)=>dm.getCell('A'+(i+2)).value=o.name);dm.getColumn(1).width=26;
+  dm.getCell('G1').value='Cảng đi';dm.getCell('G1').font={bold:true};POL_LIST.forEach((x,i)=>dm.getCell('G'+(i+2)).value=x);dm.getColumn(7).width=22;
   dm.getCell('C1').value='Loại cont';dm.getCell('C2').value='40';dm.getCell('C3').value='20';dm.getCell('E1').value='C/O';dm.getCell('E2').value='Có';dm.getCell('E3').value='Không';
   ws.dataValidations.add(`${L.cont}4:${L.cont}503`,{type:'list',allowBlank:true,formulae:['DanhMuc!$C$2:$C$3']});
+  ws.dataValidations.add(`${L.pol}4:${L.pol}503`,{type:'list',allowBlank:true,showErrorMessage:false,formulae:[`DanhMuc!$G$2:$G$${POL_LIST.length+1}`]});
   ws.dataValidations.add(`${L.origin}4:${L.origin}503`,{type:'list',allowBlank:true,formulae:[`DanhMuc!$A$2:$A$${ORIGINS.length+1}`]});
   ws.dataValidations.add(`${L.co}4:${L.co}503`,{type:'list',allowBlank:true,formulae:['DanhMuc!$E$2:$E$3']});
   for(let r=4;r<=503;r++){
@@ -808,7 +816,7 @@ async function buildTemplate(){
   const hd=wb.addWorksheet('Hướng dẫn');hd.getColumn(1).width=26;hd.getColumn(2).width=90;
   [['HƯỚNG DẪN NHẬP FILE',''],['',''],['Bước 1','Điền sản phẩm vào sheet "Sản phẩm" từ dòng 4, mỗi sản phẩm 1 dòng.'],['Bước 2','Ảnh: Insert › Pictures, kéo ảnh nằm gọn trong ô cột A của dòng đó (ảnh dạng nổi). Ảnh kiểu "Place in cell" của Excel 365 tool chưa đọc được.'],['Bước 3','Lưu file .xlsx, mở tool › Tính giá › "Nhập từ Excel", xem trước rồi bấm Thêm hoặc Thay toàn bộ.'],['',''],['CỘT','CÁCH ĐIỀN'],
    ...IMP_COLS.map(c=>[c[1],c[2]]),['',''],['Mẹo','Có thể nhập lại chính file Excel landed cost mà tool đã xuất (tool tự nhận các cột Mã SP, Tên, FOB, MOQ, HS, Xuất xứ, C/O…).'],['Mẹo','Mã HS để trống thì tool gợi ý theo tên sản phẩm; nên kiểm tra lại các dòng được đánh dấu "tool gợi ý".'],['',''],['VÍ DỤ',''],
-   ['Mã SP','QDH-40L | Quạt điều hòa 40L | 42 | 300 | 40 | Trung Quốc | Có | 8479.60.00 | 24 |  |  | 1200'],['Mã SP','SH-12 | Máy làm sữa hạt 1,2L | 21.5 | 1600 | 40 | Trung Quốc | Có | (trống – tool gợi ý) |  | 800 | A | 3200']]
+   ['Ví dụ 1','VD-QDH01 | Quạt điều hòa 40L (ví dụ) | 220V/50Hz, 180W, bình nước 40L | 42 | 300 | 40 | Trung Quốc | Nhà máy ví dụ A | (địa chỉ) | Ningbo | Có | 8479.60.00 | 24 |  |  |  | 1200'],['Ví dụ 2','VD-MG01 | Máy giặt 8kg (ví dụ) | 220V, 1400 vòng/phút | 150 | 120 | 40 | Trung Quốc | Nhà máy ví dụ B | (địa chỉ) | Shanghai | Có | (trống – tool tự chọn theo sức chứa) |  | 8 |  |  | ']]
    .forEach((r,i)=>{const row=hd.getRow(i+1);row.values=r;if(/^(HƯỚNG|CỘT|VÍ DỤ)/.test(r[0]))row.font={bold:true};row.getCell(2).alignment={wrapText:true}});
   return wb;
 }
@@ -828,6 +836,7 @@ function bindTabs(){document.querySelectorAll('nav.tabs button').forEach(b=>b.ad
   const t=LS.get('lc_tab','calc');const b=document.querySelector(`nav.tabs button[data-tab="${t}"]`);if(b)b.click()}
 (async function boot(){
   bindTabs();bindSettings();bindCards();bindOvr();bindTariff();bindImport();
+  $('#polList').innerHTML=POL_LIST.map(x=>`<option value="${x}">`).join('');
   $('#addBtn').onclick=()=>{const last=P[P.length-1];P.push({id:nextId++,code:'',name:'',fob:'',moq:'',cont:last?last.cont:'40',origin:last?last.origin:'CN',co:last&&last.co?last.co:'yes',hs:'',qty:'',group:'',annual:'',img:'',man:{}});save();renderCards();const c=document.querySelector('.pcard:last-child [data-k="code"]');if(c){c.focus();c.scrollIntoView({block:'center'})}};
   $('#clearSamples').onclick=()=>{P=P.filter(p=>!p.sample);if(!P.length)P.push({id:nextId++,code:'',name:'',fob:'',moq:'',cont:'40',origin:'CN',hs:'',qty:'',group:'',annual:'',img:'',man:{}});save();renderCards()};
   $('#xlsBtn').onclick=()=>exportXlsx().catch(e=>{toast('Không xuất được file: '+e.message)});

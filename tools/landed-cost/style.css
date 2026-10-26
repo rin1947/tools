@@ -16,6 +16,7 @@
   --accent:#8fd06b; --accent-ink:#13200d; --steel:#ff9bba; --steel-soft:#3a2632;
   --ok:#7fd19e; --ok-soft:#183427; --warn:#f0c062; --warn-soft:#3a2e14; --bad:#ff9a8f; --bad-soft:#3d1c19; color-scheme:dark}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.5;margin:0}
 .wrap{max-width:1280px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 60px}
 h1,h2,h3{font-family:var(--f-display);font-weight:600;letter-spacing:.01em;text-wrap:balance;margin:0}

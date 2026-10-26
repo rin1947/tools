@@ -7,7 +7,7 @@ Giao diện hồng · xanh tre · gấu trúc. Chạy hoàn toàn trên trình d
 
 | Tool | Mô tả | Trạng thái |
 |---|---|---|
-| 🚢 [Landed Cost Nhập Khẩu](tools/landed-cost/) (v9) | Giá về kho theo mã HS, C/O (MFN / ACFTA / RCEP), cước cont, QCVN 04/09, hiệu suất năng lượng, ATTP. Tra cứu HS, nhập từ Excel ([file mẫu](tools/landed-cost/Mau-Import-San-Pham.xlsx)), xuất Excel | Đang dùng |
+| 🚢 [Landed Cost Nhập Khẩu](tools/landed-cost/) (v10) | Giá về kho theo mã HS, C/O (MFN / ACFTA / RCEP), cước cont, QCVN 04/09, hiệu suất năng lượng, ATTP. Tra cứu HS, nhập từ Excel ([file mẫu](tools/landed-cost/Mau-Import-San-Pham.xlsx)), xuất Excel. Lưu tên/địa chỉ nhà máy, cảng đi, thông số kỹ thuật (chỉ trên máy) | Đang dùng |
 | 🧾 [PA giá & Đề nghị thanh toán](tools/cost-payment/) | Kéo thả hoá đơn điện tử (PDF / XML) → tự đọc số HĐ, ngày, từng dòng phí, tiền thuế đúng hoá đơn (không làm tròn) và tự chọn người nhận theo MST. Ra bảng kê chi phí, phương án giá vốn, phiếu đề nghị thanh toán (in / xuất Excel). Nạp tờ khai ECUS để lấy hàng hoá, tỷ giá tính thuế, cước, bảo hiểm. Thông tin công ty, logo, danh bạ STK nhập ở ⚙️ Cài đặt — chỉ lưu trên máy | Đang dùng |
 
 ## Cách dùng
