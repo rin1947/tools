@@ -80,10 +80,11 @@
     if (!S.nameGroup) S.nameGroup = {};
   }
 
-  function makeLot() {
+  function makeLot(L0) {
     const tpl = S.template || BASE_TEMPLATE;
     return {
       code: '', port: '', cont: '', decl: '', rate: '', taxRate: '',
+      warehouse: (L0 && L0.warehouse) || '', contact: (L0 && L0.contact) || '',
       companyId: (S.companies[0] || {}).id || '',
       items: [newItem()],
       fees: tpl.map((t) => newFee({
@@ -159,7 +160,7 @@
   }
 
   /* ======================= GIAO DIỆN: LÔ HÀNG ======================= */
-  const lotFields = ['code', 'port', 'cont', 'decl', 'rate', 'taxRate'];
+  const lotFields = ['code', 'port', 'cont', 'decl', 'rate', 'taxRate', 'warehouse', 'contact'];
   function renderLot() {
     lotFields.forEach((k) => { $('lot_' + k).value = L[k] ?? ''; });
     $('lot_company').innerHTML = S.companies.map((c, i) =>
@@ -245,7 +246,7 @@
     if ((k === 'pre' || k === 'vat') && f.src !== 'inv') { f.vatAmt = ''; const inp = tr.querySelector('[data-k="vatAmt"]'); if (inp) inp.value = ''; }
     if (e.type === 'change') {
       if (k === 'payee' && f.sellerMst) learnPayee(f.sellerMst, f.payee);
-      if (k === 'group') { if (f.src === 'inv') S.nameGroup[normName(f.name)] = f.group; saveSet(); renderFees(); }
+      if (k === 'group') { f.groupManual = true; if (f.src === 'inv') S.nameGroup[normName(f.name)] = f.group; saveSet(); renderFees(); }
     }
     update();
   }
@@ -648,6 +649,7 @@
     return n || desc;
   }
 
+  let batchId = 0;
   function addInvoice(inv, fileName) {
     const log = { file: fileName, inv };
     if (!inv.lines.length) { log.status = 'err'; log.msg = inv.warnings.join('; ') || 'Không đọc được'; return log; }
@@ -663,7 +665,7 @@
       const cif = (group === 'OF' && /cước/i.test(ln.desc)) || group === 'BH';
       const data = {
         group, name, pre: String(ln.pre), vat: ln.rate == null ? '' : String(ln.rate), vatAmt: String(ln.vat),
-        inv: inv.no, date: inv.date || '', payee, src: 'inv', seller: shortName(inv.seller), sellerMst: inv.sellerMst, desc: ln.desc, cif,
+        inv: inv.no, date: inv.date || '', payee, src: 'inv', batch: batchId, learned: !!S.nameGroup[normName(ln.desc)], seller: shortName(inv.seller), sellerMst: inv.sellerMst, desc: ln.desc, cif,
       };
       // ưu tiên điền vào dòng mẫu còn trống (cùng tên / dòng cước-bảo hiểm đã có số từ tờ khai)
       const empty = (f) => f.src !== 'inv' && !String(f.inv).trim();
@@ -681,6 +683,16 @@
   }
   const near = (a, b) => Math.abs(a - b) < 0.005;
 
+  /* Hoá đơn phí nội địa (local charge) xuất CÙNG NGÀY, CÙNG bên bán với hoá đơn cước biển
+     → xếp vào nhóm CƯỚC VẬN TẢI QT (giống cách làm bảng kê gốc). Nhóm người dùng đã chỉnh/đã học thì giữ nguyên. */
+  function regroupLocalCharges() {
+    const freight = L.fees.filter((f) => f.src === 'inv' && f.group === 'OF' && f.cif);
+    L.fees.forEach((f) => {
+      if (f.batch !== batchId || f.group !== 'KT' || f.learned || f.groupManual) return;
+      if (freight.some((x) => x.sellerMst === f.sellerMst && x.date && x.date === f.date && x.inv !== f.inv)) f.group = 'OF';
+    });
+  }
+
   let importLog = [];
   async function importFiles(files) {
     files = [...files];
@@ -691,6 +703,7 @@
     if (!invs.length) return;
     toast(`Đang đọc ${invs.length} hoá đơn…`);
     const logs = [];
+    batchId = Date.now();
     for (const f of invs) {
       try {
         const inv = /\.xml$/i.test(f.name) ? InvoiceParser.fromXml(await f.text()) : await readPdf(f);
@@ -699,6 +712,7 @@
         logs.push({ file: f.name, status: 'err', msg: err.message || 'Không đọc được file' });
       }
     }
+    regroupLocalCharges();
     importLog = logs.concat(importLog).slice(0, 30);
     saveLot(); renderFees(); update(); renderImportLog();
     const ok = logs.filter((l) => l.status === 'ok' || l.status === 'warn').length;
@@ -737,61 +751,64 @@
   });
 
   /* ======================= XUẤT EXCEL ======================= */
-  $('btnExport').onclick = () => {
-    const c = calc();
-    const sheets = [];
-    const bk = [['LÔ HÀNG', L.code], ['SỐ LƯỢNG CONT', L.cont], ['CẢNG ĐI', L.port], ['SỐ TỜ KHAI', L.decl], [],
-      ['NHÓM', 'LOẠI PHÍ', 'PHÍ -VAT', 'VAT %', 'TIỀN VAT', '+VAT', 'NOTE/Ghi chú', 'Hoá đơn số', 'Ngày hoá đơn', 'Người nhận TT', 'Thông tin chuyển khoản']];
-    L.fees.forEach((f) => {
-      const p = S.payees.find((x) => x.key === f.payee);
-      bk.push([GROUPS[f.group], f.name, parseNum(f.pre) || null, f.vat === '' ? 'không HĐ' : parseNum(f.vat) / 100,
-        parseNum(f.pre) ? feeVat(f) : null, feePost(f) || null, f.note, f.inv, f.date ? dateVN(new Date(f.date + 'T00:00:00')) : '', f.payee,
-        p ? [p.holder, p.acc && 'STK: ' + p.acc, p.bank].filter(Boolean).join(' - ') : '']);
+  /* Xuất Excel đúng cấu trúc file PA giá gốc (export-xlsx.js, thư viện ExcelJS tải lười từ cdnjs) */
+  function loadExcelJS() {
+    if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+    return new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+      s.onload = () => res(window.ExcelJS); s.onerror = () => rej(new Error('Không tải được thư viện Excel (kiểm tra mạng)'));
+      document.head.append(s);
     });
-    bk.push(['TỔNG CỘNG', '', c.totalPre, '', c.totalPost - c.totalPre, c.totalPost]);
-    sheets.push({ name: 'BẢNG KÊ CHI PHÍ', rows: bk, colWidths: [22, 36, 14, 9, 13, 14, 18, 13, 13, 22, 50] });
+  }
+  const imgSize = (url) => new Promise((res) => { const i = new Image(); i.onload = () => res([i.width, i.height]); i.onerror = () => res([0, 0]); i.src = url; });
 
-    const pa = [['PHƯƠNG ÁN GIÁ'], ['CẢNG ĐI:', L.port], ['LÔ HÀNG:', L.code], ['TỶ GIÁ:', c.rate], ['CONTAINER QTY', L.cont], [],
-      ['ITEM CODE', 'Tên hàng', 'Color', 'QTY', 'UNIT PRICE', 'TOTAL AMOUNT', 'Hs code', '% Thuế NK', 'GIÁ VỐN DỰ KIẾN', 'GIÁ VỐN (NK theo CIF)']];
-    L.items.forEach((it, i) => {
-      if (!it.code && !it.price) return;
-      const r = c.items[i];
-      pa.push([it.code, it.name, it.color, parseNum(it.qty), parseNum(it.price), r.amount, it.hs, parseNum(it.nk) / 100,
-        r.cost, r.costCif]);
-    });
-    pa.push(['', '', 'TỔNG', c.qty, '', c.fob], [],
-      ['', '', '', '', 'OF', c.rate ? c.sum.OF / c.rate : 0],
-      ['', '', '', '', 'PHÍ LÀM HÀNG & KÉO HÀNG', c.rate ? c.sum.KT / c.rate : 0],
-      ['', '', '', '', 'PHÍ BH', c.rate ? c.sum.BH / c.rate : 0],
-      ['', '', '', '', 'TOTAL', c.rate ? c.totalPre / c.rate : 0],
-      ['', '', '', '', '%', c.pct]);
-    sheets.push({ name: 'PHƯƠNG ÁN GIÁ', rows: pa, colWidths: [14, 40, 18, 8, 12, 14, 12, 10, 16, 18] });
-
-    buildPayments().forEach((pm) => {
-      const st = dnState(pm.payee);
-      const co = S.companies.find((x) => x.id === st.companyId) || {};
-      const p = S.payees.find((x) => x.key === pm.payee) || {};
-      const total = pm.lines.reduce((a, l) => a + l.amount, 0), adv = parseNum(st.advance);
-      const rows = [[co.name || ''], [co.address || ''], [co.mst ? 'MST: ' + co.mst : ''], [], ['', 'GIẤY ĐỀ NGHỊ THANH TOÁN'],
-        ['', '', '', `${S.city}, ${dateVN(new Date())}`], [], ['', 'Kính gửi:', S.to], ['', 'Tôi tên:', S.requester, 'Bộ phận:', S.dept],
-        ['', 'Đề nghị thanh toán theo nội dung sau:'], ['STT', 'Số hóa đơn', 'Nội Dung', '', 'Số tiền']];
-      pm.lines.forEach((l, i) => rows.push([i + 1, l.inv, l.content, '', l.amount]));
-      rows.push(['TỔNG CỘNG', '', '', '', total], ['', '', 'SỐ TIỀN ĐÃ TẠM ỨNG:', '', adv],
-        ['', '', 'SỐ TIỀN CÒN LẠI PHẢI THANH TOÁN:', '', total - adv], [],
-        ['', 'Hình thức TT:', 'Chuyển khoản'], ['', 'Chủ TK:', p.holder || ''], ['', 'Số tài khoản:', p.acc || ''],
-        ['', 'Mở tại NH:', p.bank || ''], ['', 'Thời hạn TT:', st.due ? dateVN(new Date(st.due + 'T00:00:00')) : ''], [],
-        ['', 'BGĐ', 'Phụ trách Kế toán', 'Phụ trách bộ phận', 'Người đề nghị'],
-        ['', '(Ký, ghi rõ họ tên)', '(Ký, ghi rõ họ tên)', '(Ký, ghi rõ họ tên)', '(Ký, ghi rõ họ tên)'], [], [], [], ['', '', '', '', S.requester]);
-      const name = ('ĐNTT ' + pm.payee).replace(/[\\/?*[\]:]/g, ' ').slice(0, 31);
-      sheets.push({ name, rows, colWidths: [7, 16, 40, 18, 18] });
-    });
-    GauBep.exportXlsx(`PAGia_${(L.code || 'lo').replace(/[^\w-]+/g, '')}_${GauBep.today()}.xlsx`, sheets);
+  $('btnExport').onclick = async () => {
+    try {
+      const c = calc();
+      const bankInfo = (p) => (p ? [p.holder && `Tên TK: ${p.holder}`, p.acc && `TK số: ${p.acc}`, p.bank && `Tại ${p.bank}`].filter(Boolean).join(' – ') : '');
+      const fees = L.fees.filter((f) => String(f.name).trim() || parseNum(f.pre)).map((f) => {
+        const p = S.payees.find((x) => x.key === f.payee);
+        const inv = String(f.inv).trim();
+        const noteType = /dự kiến/i.test(f.note) ? 'dự kiến cp chưa có hoá đơn' : inv || f.vat !== '' ? 'có hoá đơn' : 'không hoá đơn';
+        return {
+          group: f.group, name: f.name, pre: parseNum(f.pre), post: feePost(f), vatNo: f.vat, inv, date: f.date,
+          note: /dự kiến/i.test(f.note) ? '' : f.note, noteType, payee: f.payee, payeeInfo: bankInfo(p) || f.payee,
+        };
+      });
+      const items = L.items.filter((it) => it.code || it.name || String(it.price).trim()).map((it) => ({
+        code: it.code, name: it.name, color: it.color, qty: parseNum(it.qty), price: parseNum(it.price), hs: it.hs, nk: parseNum(it.nk),
+      }));
+      const dn = [];
+      for (const pm of buildPayments()) {
+        const st = dnState(pm.payee);
+        const co = S.companies.find((x) => x.id === st.companyId) || S.companies[0] || {};
+        const p = S.payees.find((x) => x.key === pm.payee) || {};
+        const [lw, lh] = co.logo ? await imgSize(co.logo) : [0, 0];
+        dn.push({
+          sheet: pm.payee, company: co, logo: co.logo, logoW: lw, logoH: lh, to: S.to, requester: S.requester, dept: S.dept, city: S.city,
+          date: new Date(), lines: pm.lines, advance: parseNum(st.advance), holder: p.holder || pm.payee, acc: p.acc || '', bank: p.bank || '',
+          due: st.due ? new Date(st.due + 'T00:00:00Z') : '',
+        });
+      }
+      const ExcelJS = await loadExcelJS();
+      const wb = CostPaymentExport.build(ExcelJS, { lot: L, rate: c.rate, items, fees, dn });
+      const buf = await wb.xlsx.writeBuffer();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      a.download = `PAGia_${(L.code || 'lo').replace(/[^\w-]+/g, '')}_${GauBep.today()}.xlsx`;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      toast('Đã xuất file Excel 🎉');
+    } catch (err) {
+      toast(err.message || 'Không xuất được file');
+    }
   };
 
   /* ======================= LÔ MỚI / MẪU / LÀM MỚI ======================= */
   $('btnNewLot').onclick = () => {
     if (!confirm('Tạo lô mới? Dữ liệu lô hiện tại sẽ bị thay (nên Xuất Excel trước). Cài đặt & danh bạ giữ nguyên.')) return;
-    L = makeLot(); saveLot(); renderAll(); toast('Lô mới đã sẵn sàng ✨');
+    L = makeLot(L); saveLot(); renderAll(); toast('Lô mới đã sẵn sàng ✨');
   };
 
   $('btnSample').onclick = () => {

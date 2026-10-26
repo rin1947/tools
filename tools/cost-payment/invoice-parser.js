@@ -116,8 +116,15 @@
         const at = after.match(/tại\s*:?\s*(.+)$/i);
         if (at) res.bankName = at[1].trim();
         else {
-          const idx = lines.indexOf(tk); const nx = lines[idx + 1];
-          if (nx && /^(NH|Ngân\s*hàng)/i.test(nx.text)) res.bankName = nx.text.trim();
+          // tên ngân hàng: ô ngay bên dưới, cùng lề trái với ô "TK:"
+          const tc = tk.cells.find((c) => c.s.includes(m[1].trim().slice(0, 4))) || tk.cells[0];
+          const below = cells.filter((c) => c.p === tk.p && Math.abs(c.x - tc.x) < 6 && c.y < tc.y && tc.y - c.y < tc.h * 4).sort((a, b) => b.y - a.y);
+          const bi = below.findIndex((c) => /^(NH|Ngân\s*hàng)/i.test(c.s));
+          if (bi >= 0) {
+            let name = below[bi].s; const nx = below[bi + 1];
+            if (nx && below[bi].y - nx.y < tc.h * 1.6 && nx.s.length < 25 && !/:/.test(nx.s)) name += ' ' + nx.s;
+            res.bankName = name.trim();
+          }
         }
       }
     }

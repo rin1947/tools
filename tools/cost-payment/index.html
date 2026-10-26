@@ -98,6 +98,8 @@
           <div class="field"><label>Số tờ khai</label><input id="lot_decl"></div>
           <div class="field"><label>Tỷ giá PA <span class="hint" tabindex="0" data-tip="Tỷ giá dùng để tính giá vốn dự kiến (thường là tỷ giá mua USD dự kiến).">?</span></label><input id="lot_rate" inputmode="decimal"></div>
           <div class="field"><label>Tỷ giá tính thuế <span class="hint" tabindex="0" data-tip="Tỷ giá trên tờ khai. Chỉ dùng cho cột Giá vốn (thuế NK theo CIF).">?</span></label><input id="lot_taxRate" inputmode="decimal"></div>
+          <div class="field"><label>Địa chỉ kho</label><input id="lot_warehouse"></div>
+          <div class="field"><label>Liên hệ</label><input id="lot_contact"></div>
         </div>
       </section>
 
@@ -169,6 +171,7 @@
 
   <script src="../../assets/common.js"></script>
   <script src="invoice-parser.js"></script>
+  <script src="export-xlsx.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
