@@ -14,4 +14,14 @@ window.TOOLS = [
     category: 'Nhập khẩu',
     updated: '2026-10-25',
   },
+  {
+    id: 'cost-payment',
+    name: 'PA giá & Đề nghị thanh toán',
+    icon: '🧾',
+    description: 'Nhập chi phí lô hàng theo hoá đơn → bảng kê, giá vốn từng mã và phiếu đề nghị thanh toán cho từng người nhận. Nạp tờ khai ECUS.',
+    path: 'tools/cost-payment/index.html',
+    status: 'live',
+    category: 'Nhập khẩu',
+    updated: '2026-10-26',
+  },
 ];

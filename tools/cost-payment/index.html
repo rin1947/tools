@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PA giá &amp; Đề nghị thanh toán</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧾</text></svg>">
+  <link rel="stylesheet" href="../../assets/theme.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <div class="container stack">
+
+      <section class="hero no-print">
+        <div style="font-size:56px">🧾</div>
+        <div>
+          <h1>PA giá &amp; Đề nghị thanh toán</h1>
+          <p>Nhập chi phí theo hoá đơn của lô hàng một lần → ra bảng kê chi phí, phương án giá vốn và phiếu đề nghị thanh toán cho từng người nhận, in hoặc xuất Excel.</p>
+        </div>
+        <span id="bamboo"></span>
+      </section>
+
+      <div class="toolbar no-print">
+        <button class="btn btn-pink btn-sm" id="btnNewLot">✨ Lô mới</button>
+        <label class="btn btn-ghost btn-sm file-btn">📥 Nạp tờ khai ECUS (.xlsx)
+          <input type="file" id="fileEcus" accept=".xlsx,.xls" hidden>
+        </label>
+        <button class="btn btn-ghost btn-sm" id="btnSample">🐼 Nạp dữ liệu mẫu</button>
+        <button class="btn btn-ghost btn-sm" id="btnSettings">⚙️ Cài đặt</button>
+        <span style="flex:1"></span>
+        <button class="btn btn-ghost btn-sm" id="btnPrintPa">🖨️ In PA giá</button>
+        <button class="btn btn-primary" id="btnExport">📗 Xuất Excel</button>
+      </div>
+
+      <div class="note no-print" id="setupNote" hidden>
+        👋 Lần đầu dùng: vào <b>⚙️ Cài đặt</b> nhập thông tin công ty (tên, địa chỉ, MST, logo), người đề nghị và danh bạ người nhận (STK).
+        Các thông tin này <b>chỉ lưu trên trình duyệt máy này</b>, không đưa lên mạng.
+      </div>
+
+      <!-- ===================== CÀI ĐẶT ===================== -->
+      <section class="card no-print" id="settingsCard" hidden>
+        <h2 class="section-title"><span class="num">⚙</span> Cài đặt (lưu trên máy này)</h2>
+
+        <h3 class="sub-title">Người đề nghị</h3>
+        <div class="form-grid">
+          <div class="field"><label>Kính gửi</label><input id="set_to"></div>
+          <div class="field"><label>Họ tên người đề nghị</label><input id="set_requester"></div>
+          <div class="field"><label>Bộ phận</label><input id="set_dept"></div>
+          <div class="field"><label>Nơi lập phiếu</label><input id="set_city"></div>
+        </div>
+
+        <h3 class="sub-title">Công ty (đầu phiếu đề nghị thanh toán)</h3>
+        <div id="companyList" class="company-list"></div>
+        <button class="btn btn-pink btn-sm" id="btnAddCompany">＋ Thêm công ty</button>
+
+        <h3 class="sub-title">Danh bạ người nhận thanh toán
+          <span class="hint" tabindex="0" data-tip="Tên gợi nhớ là tên chọn ở cột Người nhận. STK chỉ lưu trên trình duyệt này.">?</span></h3>
+        <div class="table-wrap">
+          <table class="edit-table">
+            <thead><tr><th>Tên gợi nhớ</th><th>Chủ tài khoản</th><th>Số tài khoản</th><th>Ngân hàng</th><th class="num">Hạn TT (ngày)</th><th></th></tr></thead>
+            <tbody id="payeeBody"></tbody>
+          </table>
+        </div>
+        <button class="btn btn-pink btn-sm" id="btnAddPayee">＋ Thêm người nhận</button>
+
+        <h3 class="sub-title">Mẫu bảng kê cho lô mới</h3>
+        <p class="help-text">Bấm <b>✨ Lô mới</b> sẽ tạo bảng kê theo mẫu này. Dòng nào đánh dấu 📌 <b>Cố định</b> sẽ giữ luôn số tiền (vd phí KTCL, phí xuống container).</p>
+        <div class="toolbar">
+          <button class="btn btn-ghost btn-sm" id="btnSaveTemplate">💾 Lấy bảng kê hiện tại làm mẫu</button>
+          <button class="btn btn-ghost btn-sm" id="btnResetTemplate">↺ Về mẫu gốc</button>
+          <span class="help-text" id="templateInfo"></span>
+        </div>
+
+        <h3 class="sub-title">Sao lưu</h3>
+        <p class="help-text">Dữ liệu nằm trên trình duyệt: đổi máy / xoá lịch sử duyệt web sẽ mất. Nên tải bản sao lưu, cất vào Drive riêng.</p>
+        <div class="toolbar">
+          <button class="btn btn-ghost btn-sm" id="btnBackup">⬇️ Tải bản sao lưu (.json)</button>
+          <label class="btn btn-ghost btn-sm file-btn">⬆️ Nạp bản sao lưu
+            <input type="file" id="fileBackup" accept=".json" hidden>
+          </label>
+          <span style="flex:1"></span>
+          <button class="btn btn-primary btn-sm" id="btnCloseSettings">Xong</button>
+        </div>
+      </section>
+
+      <!-- ===================== 1. LÔ HÀNG ===================== -->
+      <section class="card print-pa">
+        <h2 class="section-title"><span class="num">1</span> Thông tin lô hàng</h2>
+        <div class="form-grid">
+          <div class="field"><label>Lô hàng</label><input id="lot_code" placeholder="VD-PO-001"></div>
+          <div class="field"><label>Công ty nhập</label><select id="lot_company"></select></div>
+          <div class="field"><label>Cảng đi</label><input id="lot_port"></div>
+          <div class="field"><label>Số lượng cont</label><input id="lot_cont" placeholder="1 CONT 40'"></div>
+          <div class="field"><label>Số tờ khai</label><input id="lot_decl"></div>
+          <div class="field"><label>Tỷ giá PA <span class="hint" tabindex="0" data-tip="Tỷ giá dùng để tính giá vốn dự kiến (thường là tỷ giá mua USD dự kiến).">?</span></label><input id="lot_rate" inputmode="decimal"></div>
+          <div class="field"><label>Tỷ giá tính thuế <span class="hint" tabindex="0" data-tip="Tỷ giá trên tờ khai. Chỉ dùng cho cột Giá vốn (thuế NK theo CIF).">?</span></label><input id="lot_taxRate" inputmode="decimal"></div>
+        </div>
+      </section>
+
+      <!-- ===================== 2. HÀNG HOÁ ===================== -->
+      <section class="card print-pa">
+        <h2 class="section-title"><span class="num">2</span> Hàng hoá &amp; phương án giá</h2>
+        <div class="table-wrap">
+          <table class="edit-table">
+            <thead><tr>
+              <th>Item code</th><th>Tên hàng</th><th>Màu</th><th class="num">QTY</th><th class="num">Đơn giá (USD)</th>
+              <th class="num">Thành tiền (USD)</th><th>HS code</th><th class="num">% Thuế NK</th>
+              <th class="num">Giá vốn dự kiến</th>
+              <th class="num">Giá vốn (NK theo CIF) <span class="hint" tabindex="0" data-tip="Thuế NK chỉ tính trên FOB + cước QT + bảo hiểm theo tỷ giá tính thuế, không tính trên phí làm hàng nội địa — sát với tờ khai hơn.">?</span></th>
+              <th class="no-print"></th>
+            </tr></thead>
+            <tbody id="itemBody"></tbody>
+            <tfoot id="itemFoot"></tfoot>
+          </table>
+        </div>
+        <div class="toolbar no-print" style="margin-top:10px">
+          <button class="btn btn-pink btn-sm" id="btnAddItem">＋ Thêm mã hàng</button>
+        </div>
+        <div class="kpis" id="paKpis" style="margin-top:14px"></div>
+        <p class="help-text">Giá vốn dự kiến = Đơn giá × (1 + % chi phí) × Tỷ giá PA × (1 + % thuế NK). % chi phí = (Cước QT + Phí làm hàng + Bảo hiểm) ÷ Tỷ giá ÷ Tổng tiền hàng. Chi phí trước VAT, phân bổ theo giá trị.</p>
+      </section>
+
+      <!-- ===================== 3. BẢNG KÊ ===================== -->
+      <section class="card print-pa">
+        <h2 class="section-title"><span class="num">3</span> Bảng kê chi phí</h2>
+        <p class="help-text no-print">Hoá đơn nhiều dòng phí: nhập mỗi dòng một hàng, <b>cùng số hoá đơn</b> → phiếu đề nghị tự gộp 1 dòng. Không có hoá đơn: chọn VAT "Không HĐ". Cột "+VAT" tự tính; gõ đè nếu tổng trên hoá đơn lệch 1–2đ do làm tròn.</p>
+        <div class="table-wrap">
+          <table class="edit-table fee-table">
+            <thead><tr>
+              <th>Nhóm</th><th>Loại phí</th><th class="num">Phí -VAT</th><th>VAT</th><th class="num">+VAT</th>
+              <th>Số HĐ</th><th>Ngày HĐ</th><th>Ghi chú</th><th>Người nhận TT</th><th>Nội dung trên ĐNTT</th>
+              <th title="Nằm trong trị giá tính thuế trên tờ khai (cước QT, bảo hiểm)">CIF</th>
+              <th class="no-print" title="Giữ số tiền khi tạo lô mới">📌</th><th class="no-print"></th>
+            </tr></thead>
+            <tbody id="feeBody"></tbody>
+            <tfoot id="feeFoot"></tfoot>
+          </table>
+        </div>
+        <datalist id="feeNames"></datalist>
+        <div class="toolbar no-print" style="margin-top:10px">
+          <button class="btn btn-pink btn-sm" data-add="KT">＋ Phí làm hàng</button>
+          <button class="btn btn-pink btn-sm" data-add="OF">＋ Cước vận tải QT</button>
+          <button class="btn btn-pink btn-sm" data-add="BH">＋ Bảo hiểm</button>
+        </div>
+        <div class="kpis" id="feeKpis" style="margin-top:14px"></div>
+      </section>
+
+      <!-- ===================== 4. ĐỀ NGHỊ THANH TOÁN ===================== -->
+      <section class="card print-dn-wrap" id="dnSection">
+        <h2 class="section-title no-print"><span class="num">4</span> Đề nghị thanh toán</h2>
+        <p class="help-text no-print">Mỗi người nhận một phiếu, tự gộp theo số hoá đơn. Chọn công ty in trên đầu phiếu, số tạm ứng và thời hạn rồi bấm In.</p>
+        <div class="toolbar no-print">
+          <button class="btn btn-primary btn-sm" id="btnPrintAll">🖨️ In tất cả phiếu</button>
+        </div>
+        <div id="dnList" class="dn-list"></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="../../assets/common.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

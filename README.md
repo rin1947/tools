@@ -8,6 +8,7 @@ Giao diện hồng · xanh tre · gấu trúc. Chạy hoàn toàn trên trình d
 | Tool | Mô tả | Trạng thái |
 |---|---|---|
 | 🚢 [Landed Cost Nhập Khẩu](tools/landed-cost/) (v9) | Giá về kho theo mã HS, C/O (MFN / ACFTA / RCEP), cước cont, QCVN 04/09, hiệu suất năng lượng, ATTP. Tra cứu HS, nhập từ Excel ([file mẫu](tools/landed-cost/Mau-Import-San-Pham.xlsx)), xuất Excel | Đang dùng |
+| 🧾 [PA giá & Đề nghị thanh toán](tools/cost-payment/) | Nhập chi phí lô hàng theo hoá đơn → bảng kê chi phí, phương án giá vốn, phiếu đề nghị thanh toán theo từng người nhận (in / xuất Excel). Nạp tờ khai ECUS để lấy hàng hoá, tỷ giá tính thuế, cước, bảo hiểm. Thông tin công ty, logo, danh bạ STK nhập ở ⚙️ Cài đặt — chỉ lưu trên máy | Đang dùng |
 
 ## Cách dùng
 
@@ -40,6 +41,8 @@ Repo này **công khai**: ai cũng xem được mọi file và lịch sử thay 
 - Khi nhờ AI làm tool, AI phải tuân thủ mục **0. Bảo mật** trong `AGENTS.md`: có gì nhạy cảm thì hỏi bạn, không tự đưa lên.
 
 ## Lưu ý
+
+- **PA giá & Đề nghị thanh toán**: tên công ty, MST, logo, người đề nghị, **số tài khoản người nhận** và dữ liệu lô **không có trong repo** — bạn tự nhập ở ⚙️ Cài đặt, chỉ lưu trên trình duyệt. Nên bấm *Tải bản sao lưu (.json)* và cất vào Drive riêng (file `.json` này **không** đưa lên repo).
 
 - **Landed Cost** có biểu thuế sẵn trong `tools/landed-cost/tariff-data.js`. Khi có biểu thuế mới: nạp file ở tab *Thay đổi & cập nhật* (lưu trên máy), hoặc nhờ AI tạo lại file dữ liệu và tăng phiên bản.
 - **Không** commit dữ liệu thật (file mua hàng, hoá đơn, giá NCC) vào repo — repo đang public.
