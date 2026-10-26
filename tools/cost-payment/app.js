@@ -142,14 +142,18 @@
       if (ex) { ex.amount += post; ex.fees.push(f); }
       else lines.push({ inv, amount: post, fees: [f] });
     });
-    const lot = L.code ? ` - lô hàng ${L.code}` : '';
+    // đuôi nội dung theo mẫu: "… lô hàng <mã lô> <tên hàng>" (nhiều mã hàng: tên mã đầu + số mã còn lại)
+    const names = [...new Set(L.items.map((it) => String(it.name || it.code || '').trim()).filter(Boolean))];
+    const goods = names.length <= 2 ? names.join(', ') : `${names[0]} + ${names.length - 1} mã khác`;
+    const lot = [L.code ? `lô hàng ${L.code}` : (goods ? 'lô hàng' : ''), goods].filter(Boolean).join(' ');
+    const tail = lot ? ` - ${lot}` : '';
     return [...by.entries()].map(([payee, lines]) => ({
       payee,
       lines: lines.map((l) => {
         const custom = l.fees.find((f) => String(f.content).trim());
         const text = custom ? custom.content
           : l.fees.length > 1 ? joinNames(l) : l.fees[0].name;
-        return { inv: l.inv, amount: l.amount, content: text + lot };
+        return { inv: l.inv, amount: l.amount, content: text + tail };
       }),
     }));
   }
