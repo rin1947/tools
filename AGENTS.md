@@ -129,6 +129,8 @@ Phát triển riêng bởi người dùng, đã tách thành:
 | `export.js` | Phiếu đề nghị nhập kho (ExcelJS, đúng khuôn phiếu gốc) và file nhập đơn mua hàng MISA 28 cột (SheetJS, ghi `.xls` biff8) |
 
 - **Tên lô = Số đơn hàng MISA** = `<Số PO> <viết tắt kho> đợt <n>` (bỏ " đợt 1" khi PO chỉ 1 đợt, tuỳ chọn). Hai file phải luôn khớp nhau.
+- **Danh mục hàng**: file data sản phẩm NCC (Model, Tên, CBM) là nguồn số khối — nạp bản mới thì **ghi đè số khối**, báo mã mới / mã đổi số khối, cập nhật PO đang làm (trừ ô đã sửa tay). Danh sách hàng hoá MISA (Mã có tiền tố, Tên) quyết định mã + tên hàng.
+- `Mau-Nhap-PO.xlsx`: file mẫu nhập PO (chỉ dữ liệu ví dụ `VD-…`). Cột nhận theo tên tiêu đề (`HEAD` trong parsers.js), dùng chung cho dán bảng và nạp Excel.
 - Cột file MISA giữ **đúng thứ tự và tên tiêu đề** của mẫu nhập đơn mua hàng MISA (`MISA_HEAD`) — không đổi.
 - Không đưa tên công ty, NCC, MST, mã hàng thật vào code/dữ liệu mẫu; dữ liệu mẫu dùng mã `VD-…`.
 

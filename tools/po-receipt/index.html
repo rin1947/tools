@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Phiếu nhập kho &amp; File MISA</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
-  <link rel="stylesheet" href="../../assets/theme.css?v=20261026a">
-  <link rel="stylesheet" href="style.css?v=20261026a">
+  <link rel="stylesheet" href="../../assets/theme.css?v=20261026b">
+  <link rel="stylesheet" href="style.css?v=20261026b">
 </head>
 <body>
   <main class="page">
@@ -15,7 +15,7 @@
       <section class="hero no-print">
         <div style="font-size:56px">📦</div>
         <div>
-          <h1>Phiếu nhập kho &amp; File MISA <span class="badge live">bản 26/10</span></h1>
+          <h1>Phiếu nhập kho &amp; File MISA <span class="badge live">bản 26/10 · 2</span></h1>
           <p>Từ PO và lịch giao của nhà cung cấp → chia đợt giao → xuất <b>Phiếu đề nghị nhập kho</b> (.xlsx) và <b>file nhập đơn mua hàng MISA</b> (.xls), số đơn hàng khớp với tên lô trên phiếu.</p>
         </div>
         <span id="bamboo"></span>
@@ -86,12 +86,16 @@
       <!-- ===================== DANH MỤC HÀNG ===================== -->
       <section class="card no-print" id="catalogCard" hidden>
         <h2 class="section-title"><span class="num">📚</span> Danh mục hàng (lưu trên máy này)</h2>
-        <p class="help-text">Nạp file có cột <b>Mã</b> + <b>Tên</b> (vd sheet "Danh sách hàng hoá" trong mẫu nhập MISA), và file list sản phẩm có cột <b>Model</b> + <b>CBM</b> để lấy số khối.
-          Nạp nhiều file được, tool tự ghép theo model. Mỗi lần xuất phiếu, tool cũng tự nhớ tên, số khối và đơn giá gần nhất.</p>
+        <p class="help-text"><b>Nguồn chính: file data sản phẩm của NCC</b> (vd list sản phẩm của hãng, có cột <b>Model</b>, <b>Tên sản phẩm</b>, <b>CBM</b>).
+          Mỗi khi NCC gửi bản mới (thêm model, đổi kích thước thùng) → bấm nạp lại: tool <b>cập nhật số khối theo bản mới nhất</b>, thêm mã mới,
+          báo mã nào đổi số khối, và cập nhật luôn PO đang làm.
+          Tuỳ chọn: nạp thêm sheet <b>Danh sách hàng hoá</b> của MISA (cột Mã, Tên) để tool dùng đúng mã + tên hàng như trên MISA và cảnh báo mã chưa tạo.</p>
         <div class="toolbar">
-          <label class="btn btn-primary btn-sm file-btn">📥 Nạp file danh mục (.xls / .xlsx)
+          <label class="btn btn-primary btn-sm file-btn">📥 Nạp / cập nhật file data sản phẩm (.xlsx / .xls)
             <input type="file" id="fileCatalog" accept=".xlsx,.xls" multiple hidden>
           </label>
+          <label class="inline-field">Tiền tố mã hàng <span class="hint" tabindex="0" data-tip="Mã hàng MISA = tiền tố + model, vd ABC- + X100 = ABC-X100. Tự nhận khi nạp danh sách hàng hoá MISA.">?</span>
+            <input id="cat_prefix" class="w-sm" placeholder="vd ABC-"></label>
           <input id="catSearch" class="search" placeholder="🔎 Tìm model / tên…">
           <span class="help-text" id="catInfo"></span>
           <span style="flex:1"></span>
@@ -100,7 +104,7 @@
         </div>
         <div class="table-wrap cat-wrap">
           <table class="edit-table">
-            <thead><tr><th>Model</th><th>Mã hàng MISA</th><th>Tên hàng</th><th class="num">Số khối</th><th class="num">Giá gần nhất</th><th></th></tr></thead>
+            <thead><tr><th>Model</th><th>Mã hàng MISA</th><th>Tên hàng</th><th class="num">Số khối</th><th class="num">Giá gần nhất</th><th>Có trên MISA</th><th>Cập nhật</th><th></th></tr></thead>
             <tbody id="catBody"></tbody>
           </table>
         </div>
@@ -128,7 +132,10 @@
       <section class="card">
         <h2 class="section-title"><span class="num">2</span> Hàng hoá &amp; chia đợt</h2>
         <div class="toolbar no-print">
-          <button class="btn btn-primary btn-sm" id="btnPaste">📋 Dán bảng (PO / lịch giao)</button>
+          <label class="btn btn-primary btn-sm file-btn">📥 Nạp Excel (PO / lịch giao)
+            <input type="file" id="fileExcel" accept=".xlsx,.xls,.csv" multiple hidden>
+          </label>
+          <button class="btn btn-ghost btn-sm" id="btnPaste">📋 Dán bảng</button>
           <label class="btn btn-ghost btn-sm file-btn">📄 Nạp PO / hoá đơn (PDF / XML)
             <input type="file" id="fileDoc" accept=".pdf,.xml" multiple hidden>
           </label>
@@ -137,6 +144,10 @@
           <button class="btn btn-ghost btn-sm" id="btnAddLot">＋ Thêm đợt</button>
           <button class="btn btn-ghost btn-sm" id="btnRemainder">↳ Dồn phần còn lại vào đợt mới</button>
         </div>
+
+        <p class="help-text no-print">📥 File Excel cần 1 dòng tiêu đề có cột <b>Model</b> và <b>Số lượng</b>; thêm <b>Đơn giá</b> nếu có.
+          Có thêm cột <b>Đã giao</b> + <b>Ngày giao</b> thì tool chia đợt theo ngày giao. Tên cột tiếng Anh như email NCC (Material, Order Quantity, Cumulative Deliv. Qty, Delivery date) cũng đọc được.
+          <a class="link" href="Mau-Nhap-PO.xlsx" download>Tải file mẫu</a>. Nạp phiếu nhập kho / file MISA cũ vào đây cũng được (tool tự mở lại).</p>
 
         <div class="paste-box no-print" id="pasteBox" hidden>
           <p class="help-text">Copy bảng từ <b>email lịch giao</b> của NCC (có cột Material, Order Quantity, Cumulative Deliv. Qty, Delivery date) hoặc từ <b>Excel PO</b> (mã, số lượng, đơn giá) rồi dán vào đây.
@@ -187,9 +198,9 @@
     </div>
   </main>
 
-  <script src="../../assets/common.js?v=20261026a"></script>
-  <script src="parsers.js?v=20261026a"></script>
-  <script src="export.js?v=20261026a"></script>
-  <script src="app.js?v=20261026a"></script>
+  <script src="../../assets/common.js?v=20261026b"></script>
+  <script src="parsers.js?v=20261026b"></script>
+  <script src="export.js?v=20261026b"></script>
+  <script src="app.js?v=20261026b"></script>
 </body>
 </html>

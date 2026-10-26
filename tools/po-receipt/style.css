@@ -49,3 +49,7 @@
 .item-table th:nth-child(2) { background: var(--surface-2); z-index: 3; }
 .item-table input[data-k="cbm"] { width: 92px; }
 .item-table input[data-k="name"] { width: 300px; }
+
+.inline-field { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 800; color: var(--text-soft); }
+.inline-field input { width: 110px; }
+.link { color: var(--accent); font-weight: 800; text-decoration: underline; }

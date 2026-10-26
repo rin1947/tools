@@ -4,6 +4,7 @@
    PoParsers.num(s)                  số kiểu VN "14.654.000" hoặc EN "13,500,000"
    PoParsers.date(v)                 "26-Oct-2026" | "20-Oct" | "26/10/2026" | số serial Excel | Date → "yyyy-mm-dd"
    PoParsers.paste(text, known)      bảng dán từ Excel / email NCC → { kind, rows }
+   PoParsers.table(aoa, known)       bảng đọc từ file Excel (PO / lịch giao) → { kind, rows } (cùng cách nhận cột như dán)
    PoParsers.pdfLines(lines, known)  dòng chữ của PDF có chữ (PO / hoá đơn) → { rows, warnings }
    PoParsers.invoiceXml(text)        hoá đơn điện tử XML (chuẩn TT78) → { rows }
    PoParsers.receiptSheet(aoa)       mở lại "Phiếu đề nghị nhập kho" đã xuất → { lots, items }
@@ -70,7 +71,7 @@
 
   /* ---------- Bảng dán từ Excel / email (Outlook) ---------- */
   const HEAD = [
-    ['model', /^(material|model|model code|mã sản phẩm|mã sp|mã hàng|mã hàng \(\*\)|item|sku|code)$/i],
+    ['model', /^(material|model( code)?|mã sản phẩm|mã sp|mã hàng( \(\*\))?|item|sku|code)\b/i],
     ['desc', /(item description|description|tên hàng|tên sản phẩm|product name)/i],
     ['qty', /(order quantity|^qty|số lượng|^sl$|quantity)/i],
     ['delivered', /(cumulative|deliv\.? ?qty|delivered|đã giao|sl giao)/i],
@@ -90,18 +91,22 @@
       const cell = c.replace(/\s+/g, ' ').trim();
       for (const [k, re] of HEAD) {
         if (map[k] == null && re.test(cell)) {
-          if (k === 'qty' && /cumulative|deliv|unconfirmed|not deliv/i.test(cell)) continue;
+          if (k === 'qty' && /cumulative|deliv|unconfirmed|not deliv|giao|còn lại/i.test(cell)) continue;
+          if (k === 'model' && /description|tên/i.test(cell)) continue;
           map[k] = i; break;
         }
       }
     });
     return map;
   }
-  function paste(text, known) {
-    const rows = splitRows(text);
+  function paste(text, known) { return table(splitRows(text), known); }
+
+  /* Bảng 2 chiều (dán hoặc đọc từ file Excel): tìm dòng tiêu đề trong 15 dòng đầu */
+  function table(rawRows, known) {
+    const rows = rawRows.map((r) => (r || []).map((c) => (c == null ? '' : c)));
     let hi = -1, map = {};
-    for (let i = 0; i < Math.min(rows.length, 8); i++) {
-      const m = headerMap(rows[i]);
+    for (let i = 0; i < Math.min(rows.length, 15); i++) {
+      const m = headerMap(rows[i].map((c) => String(c)));
       if (m.model != null && (m.qty != null || m.delivered != null || m.price != null)) { hi = i; map = m; break; }
     }
     const out = [];
@@ -111,7 +116,7 @@
         const model = String(r[map.model] || '').trim().toUpperCase();
         if (!looksModel(model)) return;
         const g = (k) => (map[k] == null ? NaN : num(r[map[k]]));
-        const blankNum = (k) => (map[k] != null && /^\s*-?\s*$/.test(r[map[k]] || '') ? 0 : g(k));
+        const blankNum = (k) => (map[k] != null && /^\s*-?\s*$/.test(String(r[map[k]] ?? '')) ? 0 : g(k));
         out.push({
           model,
           desc: map.desc != null ? r[map.desc] : '',
@@ -122,11 +127,13 @@
           date: map.date != null ? date(r[map.date], refYear) : '',
         });
       });
-      return { kind: map.delivered != null ? 'delivery' : 'po', header: true, rows: out };
+      // có cột "đã giao" nhưng chưa dòng nào có số → coi như bảng PO
+      const hasDeliv = map.delivered != null && out.some((r) => r.delivered > 0 || r.unconfirmed > 0 || r.date);
+      return { kind: hasDeliv ? 'delivery' : 'po', header: true, rows: out };
     }
     // Không có dòng tiêu đề: mỗi dòng lấy mã + các số (SL, đơn giá, thành tiền)
     rows.forEach((r) => {
-      const toks = r.flatMap((c) => c.split(/\s+/));
+      const toks = r.flatMap((c) => String(c).split(/\s+/)).filter(Boolean);
       const model = pickModel(toks, known);
       if (!model) return;
       const nums = toks.filter((t) => t.toUpperCase() !== model).map(num).filter((n) => isFinite(n));
@@ -274,7 +281,7 @@
     return [];
   }
 
-  const api = { num, date, looksModel, pickModel, paste, pdfLines, invoiceXml, receiptSheet, misaSheet, catalogSheet, MISA_HEAD, findTriple };
+  const api = { num, date, looksModel, pickModel, paste, table, pdfLines, invoiceXml, receiptSheet, misaSheet, catalogSheet, MISA_HEAD, findTriple };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PoParsers = api;
 })(typeof window !== 'undefined' ? window : globalThis);
