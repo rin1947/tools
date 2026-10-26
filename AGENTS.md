@@ -119,6 +119,19 @@ Phát triển riêng bởi người dùng, đã tách thành:
 - **Không** viết lại logic v10; **không** sửa `tariff-data.js` trừ khi được yêu cầu cập nhật biểu thuế.
 - Khi người dùng gửi **phiên bản mới** (v11…, thường là 1 file HTML): tách `<style>` → `style.css`, `<script id="tdata">` → `tariff-data.js`, script chính → `app.js` (đổi `document.getElementById('tdata').textContent` thành `window.LC_TARIFF_B64`), phần còn lại → `index.html`; rồi áp lại lớp giao diện Gấu Bép như trên. **Chạy bản gốc và bản tách, so bảng Tổng hợp phải ra cùng số.** Cập nhật `tools.js`, README, ngày `updated`.
 
+### Tool `po-receipt` (Phiếu nhập kho & File MISA)
+
+| File | Nội dung |
+|---|---|
+| `index.html` | Giao diện: Cài đặt, Danh mục hàng, 1 Thông tin PO, 2 Hàng hoá & chia đợt, 3 Kiểm tra, PO đã làm |
+| `app.js` | Trạng thái PO (đợt, dòng hàng, SL từng đợt), dán bảng, nạp PDF/XML, mở phiếu cũ, xuất file |
+| `parsers.js` | Đọc bảng dán (email lịch giao / Excel PO), PDF có chữ (tìm bộ SL × Đơn giá = Thành tiền), hoá đơn XML, mở lại phiếu nhập kho / file MISA, danh mục hàng. Chạy được bằng Node để kiểm thử |
+| `export.js` | Phiếu đề nghị nhập kho (ExcelJS, đúng khuôn phiếu gốc) và file nhập đơn mua hàng MISA 28 cột (SheetJS, ghi `.xls` biff8) |
+
+- **Tên lô = Số đơn hàng MISA** = `<Số PO> <viết tắt kho> đợt <n>` (bỏ " đợt 1" khi PO chỉ 1 đợt, tuỳ chọn). Hai file phải luôn khớp nhau.
+- Cột file MISA giữ **đúng thứ tự và tên tiêu đề** của mẫu nhập đơn mua hàng MISA (`MISA_HEAD`) — không đổi.
+- Không đưa tên công ty, NCC, MST, mã hàng thật vào code/dữ liệu mẫu; dữ liệu mẫu dùng mã `VD-…`.
+
 ## 4. Quy tắc giao diện (bắt buộc)
 
 Phong cách: **hồng cute · xanh tre · gấu trúc**. Mềm, bo tròn, thân thiện nhưng số liệu phải rõ.

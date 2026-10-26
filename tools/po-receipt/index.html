@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phiếu nhập kho &amp; File MISA</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+  <link rel="stylesheet" href="../../assets/theme.css?v=20261026a">
+  <link rel="stylesheet" href="style.css?v=20261026a">
+</head>
+<body>
+  <main class="page">
+    <div class="container stack">
+
+      <section class="hero no-print">
+        <div style="font-size:56px">📦</div>
+        <div>
+          <h1>Phiếu nhập kho &amp; File MISA <span class="badge live">bản 26/10</span></h1>
+          <p>Từ PO và lịch giao của nhà cung cấp → chia đợt giao → xuất <b>Phiếu đề nghị nhập kho</b> (.xlsx) và <b>file nhập đơn mua hàng MISA</b> (.xls), số đơn hàng khớp với tên lô trên phiếu.</p>
+        </div>
+        <span id="bamboo"></span>
+      </section>
+
+      <div class="toolbar no-print">
+        <button class="btn btn-pink btn-sm" id="btnNew">✨ PO mới</button>
+        <label class="btn btn-ghost btn-sm file-btn">📂 Mở phiếu cũ
+          <input type="file" id="fileOpen" accept=".xlsx,.xls" multiple hidden>
+        </label>
+        <button class="btn btn-ghost btn-sm" id="btnSample">🐼 Nạp dữ liệu mẫu</button>
+        <button class="btn btn-ghost btn-sm" id="btnCatalog">📚 Danh mục hàng</button>
+        <button class="btn btn-ghost btn-sm" id="btnSettings">⚙️ Cài đặt</button>
+        <span style="flex:1"></span>
+        <button class="btn btn-primary btn-sm" id="btnExportReceipt">📦 Xuất phiếu nhập kho</button>
+        <button class="btn btn-primary btn-sm" id="btnExportMisa">📗 Xuất file MISA</button>
+      </div>
+
+      <div class="note no-print" id="setupNote" hidden>
+        👋 Lần đầu dùng: vào <b>⚙️ Cài đặt</b> nhập tên công ty, tiền tố mã hàng, nhà cung cấp (mã NCC trên MISA, tên, địa chỉ, MST);
+        rồi vào <b>📚 Danh mục hàng</b> nạp file danh sách hàng hoá (để tool tự điền tên hàng, số khối).
+        Các thông tin này <b>chỉ lưu trên trình duyệt máy này</b>, không đưa lên mạng.
+      </div>
+
+      <!-- ===================== CÀI ĐẶT ===================== -->
+      <section class="card no-print" id="settingsCard" hidden>
+        <h2 class="section-title"><span class="num">⚙</span> Cài đặt (lưu trên máy này)</h2>
+        <div class="form-grid">
+          <div class="field wide"><label>Tên công ty (đầu phiếu)</label><input id="set_company" placeholder="CÔNG TY …"></div>
+          <div class="field"><label>Phòng ban</label><input id="set_dept"></div>
+          <div class="field"><label>Tiền tố mã hàng <span class="hint" tabindex="0" data-tip="Mã hàng trên MISA = tiền tố + model. Vd tiền tố ABC- và model X100 → ABC-X100.">?</span></label><input id="set_prefix" placeholder="vd ABC-"></div>
+          <div class="field"><label>% thuế GTGT mặc định</label><input id="set_vat" inputmode="decimal"></div>
+          <div class="field"><label>ĐVT mặc định</label><input id="set_unit"></div>
+          <div class="field"><label>Loại tiền</label><input id="set_currency"></div>
+        </div>
+        <label class="check"><input type="checkbox" id="set_noSuffix"> PO chỉ có 1 đợt thì tên lô không ghi "đợt 1"</label>
+
+        <h3 class="sub-title">Nhà cung cấp <span class="hint" tabindex="0" data-tip="Mã NCC đúng như trên MISA. Chọn ● ở NCC hay dùng nhất để PO mới tự chọn.">?</span></h3>
+        <div class="table-wrap">
+          <table class="edit-table">
+            <thead><tr><th>Mặc định</th><th>Mã NCC (MISA)</th><th>Tên nhà cung cấp</th><th>Địa chỉ</th><th>Mã số thuế</th><th></th></tr></thead>
+            <tbody id="supplierBody"></tbody>
+          </table>
+        </div>
+        <button class="btn btn-pink btn-sm" id="btnAddSupplier">＋ Thêm nhà cung cấp</button>
+
+        <h3 class="sub-title">Kho nhận hàng <span class="hint" tabindex="0" data-tip="Tên kho in ở cột LOCATION. Viết tắt dùng trong tên lô (vd MN). Mã kho MISA để trống nếu không cần.">?</span></h3>
+        <div class="table-wrap">
+          <table class="edit-table">
+            <thead><tr><th>Tên kho (LOCATION)</th><th>Viết tắt trong tên lô</th><th>Mã kho MISA</th><th></th></tr></thead>
+            <tbody id="whBody"></tbody>
+          </table>
+        </div>
+        <button class="btn btn-pink btn-sm" id="btnAddWh">＋ Thêm kho</button>
+
+        <h3 class="sub-title">Sao lưu</h3>
+        <p class="help-text">Dữ liệu (cài đặt, danh mục hàng, các PO đã làm) nằm trên trình duyệt: đổi máy / xoá lịch sử duyệt web sẽ mất. Nên tải bản sao lưu, cất vào Drive riêng.</p>
+        <div class="toolbar">
+          <button class="btn btn-ghost btn-sm" id="btnBackup">💾 Tải bản sao lưu (.json)</button>
+          <label class="btn btn-ghost btn-sm file-btn">♻️ Khôi phục từ bản sao lưu
+            <input type="file" id="fileRestore" accept=".json" hidden>
+          </label>
+          <span style="flex:1"></span>
+          <button class="btn btn-primary btn-sm" id="btnCloseSettings">Xong</button>
+        </div>
+      </section>
+
+      <!-- ===================== DANH MỤC HÀNG ===================== -->
+      <section class="card no-print" id="catalogCard" hidden>
+        <h2 class="section-title"><span class="num">📚</span> Danh mục hàng (lưu trên máy này)</h2>
+        <p class="help-text">Nạp file có cột <b>Mã</b> + <b>Tên</b> (vd sheet "Danh sách hàng hoá" trong mẫu nhập MISA), và file list sản phẩm có cột <b>Model</b> + <b>CBM</b> để lấy số khối.
+          Nạp nhiều file được, tool tự ghép theo model. Mỗi lần xuất phiếu, tool cũng tự nhớ tên, số khối và đơn giá gần nhất.</p>
+        <div class="toolbar">
+          <label class="btn btn-primary btn-sm file-btn">📥 Nạp file danh mục (.xls / .xlsx)
+            <input type="file" id="fileCatalog" accept=".xlsx,.xls" multiple hidden>
+          </label>
+          <input id="catSearch" class="search" placeholder="🔎 Tìm model / tên…">
+          <span class="help-text" id="catInfo"></span>
+          <span style="flex:1"></span>
+          <button class="btn btn-ghost btn-sm" id="btnClearCatalog">🗑 Xoá danh mục</button>
+          <button class="btn btn-primary btn-sm" id="btnCloseCatalog">Xong</button>
+        </div>
+        <div class="table-wrap cat-wrap">
+          <table class="edit-table">
+            <thead><tr><th>Model</th><th>Mã hàng MISA</th><th>Tên hàng</th><th class="num">Số khối</th><th class="num">Giá gần nhất</th><th></th></tr></thead>
+            <tbody id="catBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===================== 1. THÔNG TIN PO ===================== -->
+      <section class="card">
+        <h2 class="section-title"><span class="num">1</span> Thông tin PO</h2>
+        <div class="form-grid">
+          <div class="field"><label>Số PO</label><input id="poNo" placeholder="vd PO-0001"></div>
+          <div class="field"><label>Ngày đơn hàng</label><input id="poDate" type="date"></div>
+          <div class="field"><label>Nhà cung cấp</label><select id="poSupplier"></select></div>
+          <div class="field"><label>Kho nhận</label><select id="poWh"></select></div>
+          <div class="field"><label>Tổng tiền PO trước VAT <span class="hint" tabindex="0" data-tip="Không bắt buộc. Nhập số trên PO để tool so với tổng tiền hàng bên dưới.">?</span></label><input id="poTotal" inputmode="decimal" placeholder="để đối chiếu"></div>
+          <div class="field"><label>File MISA</label>
+            <select id="misaMode">
+              <option value="lot">Mỗi đợt 1 số đơn (khớp tên lô)</option>
+              <option value="po">Gộp cả PO thành 1 số đơn</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== 2. HÀNG HOÁ ===================== -->
+      <section class="card">
+        <h2 class="section-title"><span class="num">2</span> Hàng hoá &amp; chia đợt</h2>
+        <div class="toolbar no-print">
+          <button class="btn btn-primary btn-sm" id="btnPaste">📋 Dán bảng (PO / lịch giao)</button>
+          <label class="btn btn-ghost btn-sm file-btn">📄 Nạp PO / hoá đơn (PDF / XML)
+            <input type="file" id="fileDoc" accept=".pdf,.xml" multiple hidden>
+          </label>
+          <button class="btn btn-pink btn-sm" id="btnAddItem">＋ Thêm dòng</button>
+          <span style="flex:1"></span>
+          <button class="btn btn-ghost btn-sm" id="btnAddLot">＋ Thêm đợt</button>
+          <button class="btn btn-ghost btn-sm" id="btnRemainder">↳ Dồn phần còn lại vào đợt mới</button>
+        </div>
+
+        <div class="paste-box no-print" id="pasteBox" hidden>
+          <p class="help-text">Copy bảng từ <b>email lịch giao</b> của NCC (có cột Material, Order Quantity, Cumulative Deliv. Qty, Delivery date) hoặc từ <b>Excel PO</b> (mã, số lượng, đơn giá) rồi dán vào đây.
+            Lịch giao: phần đã giao được xếp vào đợt theo ngày giao, phần chưa giao để ở cột <b>Còn lại</b>.</p>
+          <textarea id="pasteText" rows="6" placeholder="Dán bảng vào đây (Ctrl + V)…"></textarea>
+          <div class="toolbar">
+            <button class="btn btn-primary btn-sm" id="btnReadPaste">✅ Đọc bảng</button>
+            <button class="btn btn-ghost btn-sm" id="btnCancelPaste">Đóng</button>
+          </div>
+        </div>
+        <div class="import-log" id="importLog"></div>
+
+        <h3 class="sub-title">Các đợt giao</h3>
+        <div class="table-wrap">
+          <table class="edit-table">
+            <thead><tr><th>Đợt</th><th>Tên lô / Số đơn MISA</th><th>Ngày nhập kho dự kiến</th><th>Hoặc ghi chú <span class="hint" tabindex="0" data-tip="Có ghi chú thì phiếu in ghi chú thay cho ngày, vd: Chờ giao chéo kho ngày 05/11 đến. Ngày vẫn được dùng làm ngày giao hàng trong file MISA.">?</span></th><th>Container</th><th class="num">SL</th><th class="num">Số khối</th><th></th></tr></thead>
+            <tbody id="lotBody"></tbody>
+          </table>
+        </div>
+
+        <h3 class="sub-title">Dòng hàng</h3>
+        <div class="table-wrap">
+          <table class="edit-table item-table">
+            <thead id="itemHead"></thead>
+            <tbody id="itemBody"></tbody>
+            <tfoot id="itemFoot"></tfoot>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===================== 3. KIỂM TRA ===================== -->
+      <section class="card">
+        <h2 class="section-title"><span class="num">3</span> Kiểm tra trước khi xuất</h2>
+        <div class="kpis" id="kpis"></div>
+        <div class="checks" id="checks"></div>
+      </section>
+
+      <!-- ===================== PO ĐÃ LÀM ===================== -->
+      <section class="card no-print">
+        <h2 class="section-title"><span class="num">🗂</span> PO đã làm (lưu trên máy này)</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Số PO</th><th>Ngày PO</th><th class="num">Số mã</th><th class="num">SL</th><th>Đợt</th><th>Cập nhật</th><th></th></tr></thead>
+            <tbody id="historyBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="../../assets/common.js?v=20261026a"></script>
+  <script src="parsers.js?v=20261026a"></script>
+  <script src="export.js?v=20261026a"></script>
+  <script src="app.js?v=20261026a"></script>
+</body>
+</html>

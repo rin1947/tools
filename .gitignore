@@ -49,3 +49,4 @@ node_modules/
 # Sao lưu dữ liệu tool (chứa STK, công ty) — không đưa lên
 PAGia_*.json
 *SaoLuu*.json
+PhieuNhapKho_SaoLuu_*.json

@@ -1,0 +1,51 @@
+/* Phiếu nhập kho & File MISA — chỉ dùng biến màu từ assets/theme.css */
+
+.file-btn { cursor: pointer; }
+.sub-title { font-size: 15px; font-weight: 900; margin: 20px 0 10px; display: flex; align-items: center; gap: 6px; }
+.field.wide { grid-column: span 2; }
+@media (max-width: 640px) { .field.wide { grid-column: auto; } }
+.check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 14px; font-weight: 700; color: var(--text-soft); }
+.check input { width: 18px; height: 18px; accent-color: var(--accent); }
+
+/* ---------- Bảng nhập ---------- */
+.edit-table td { padding: 5px 6px; }
+.edit-table input.in-num { text-align: right; font-variant-numeric: tabular-nums; }
+.edit-table input[type="radio"] { width: 18px; height: 18px; accent-color: var(--accent); }
+.edit-table .w-xs { width: 70px; }
+.edit-table .w-sm { width: 110px; }
+.edit-table .w-md { width: 160px; }
+.edit-table .w-lg { width: 280px; }
+.edit-table .w-xl { width: 360px; }
+.item-table th.lot-col, .item-table td.lot-col { background: var(--accent-bg); }
+.item-table th.lot-col { color: var(--accent); }
+.item-table td.rest { font-weight: 900; }
+.item-table td.rest.ok { color: var(--accent); }
+.item-table td.rest.bad { color: var(--danger); }
+.item-table tr.unknown td.model input { border-color: var(--pink-400); background: var(--pink-50); }
+.tag { font-size: 11px; font-weight: 800; padding: 1px 6px; border-radius: 999px; background: var(--surface-2); color: var(--accent-2); margin-left: 4px; }
+.btn-x { background: transparent; border: none; cursor: pointer; font-size: 16px; color: var(--text-mute); padding: 4px 6px; border-radius: 8px; }
+.btn-x:hover { color: var(--danger); background: var(--surface-2); }
+
+/* ---------- Dán bảng / nhật ký ---------- */
+.paste-box { margin: 12px 0; padding: 14px; border: 2.5px dashed var(--bamboo-400); border-radius: var(--radius); background: var(--accent-bg); }
+.paste-box textarea { font-family: var(--mono); font-size: 12px; margin: 6px 0 10px; }
+.import-log { display: grid; gap: 4px; margin-top: 12px; font-size: 13px; }
+.import-log:empty { display: none; }
+.log-row { padding: 6px 10px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.log-row.ok { background: var(--accent-bg); }
+
+/* ---------- Danh mục ---------- */
+.search { width: 240px; }
+.cat-wrap { max-height: 420px; overflow-y: auto; margin-top: 12px; }
+
+/* ---------- Kiểm tra ---------- */
+.checks { display: grid; gap: 6px; margin-top: 14px; font-size: 14px; }
+.check-row { padding: 8px 12px; border-radius: var(--radius-sm); background: var(--accent-bg); }
+.check-row.warn { background: var(--surface-2); color: var(--accent-2); font-weight: 700; }
+.check-row.bad { background: var(--surface-2); color: var(--danger); font-weight: 800; }
+
+/* cột Model đứng yên khi cuộn ngang bảng dòng hàng */
+.item-table th:nth-child(2), .item-table td:nth-child(2) { position: sticky; left: 0; z-index: 2; background: var(--surface); box-shadow: 2px 0 0 var(--border); }
+.item-table th:nth-child(2) { background: var(--surface-2); z-index: 3; }
+.item-table input[data-k="cbm"] { width: 92px; }
+.item-table input[data-k="name"] { width: 300px; }

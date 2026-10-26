@@ -9,6 +9,7 @@ Giao diện hồng · xanh tre · gấu trúc. Chạy hoàn toàn trên trình d
 |---|---|---|
 | 🚢 [Landed Cost Nhập Khẩu](tools/landed-cost/) (v10) | Giá về kho theo mã HS, C/O (MFN / ACFTA / RCEP), cước cont, QCVN 04/09, hiệu suất năng lượng, ATTP. Tra cứu HS, nhập từ Excel ([file mẫu](tools/landed-cost/Mau-Import-San-Pham.xlsx)), xuất Excel. Lưu tên/địa chỉ nhà máy, cảng đi, thông số kỹ thuật (chỉ trên máy) | Đang dùng |
 | 🧾 [PA giá & Đề nghị thanh toán](tools/cost-payment/) | Kéo thả hoá đơn điện tử (PDF / XML) → tự đọc số HĐ, ngày, từng dòng phí, tiền thuế đúng hoá đơn (không làm tròn) và tự chọn người nhận theo MST. Ra bảng kê chi phí, phương án giá vốn, phiếu đề nghị thanh toán (in / xuất Excel). Nạp tờ khai ECUS để lấy hàng hoá, tỷ giá tính thuế, cước, bảo hiểm. Thông tin công ty, logo, danh bạ STK nhập ở ⚙️ Cài đặt — chỉ lưu trên máy | Đang dùng |
+| 📦 [Phiếu nhập kho & File MISA](tools/po-receipt/) | Dán bảng PO hoặc lịch giao của NCC (copy từ email / Excel), hoặc nạp PO / hoá đơn PDF có chữ, XML → tự tra tên hàng, số khối, giá gần nhất theo danh mục → chia đợt giao (phần chưa giao dồn sang đợt "chờ giao") → kiểm tra SL từng mã, tổng tiền so với PO → xuất **Phiếu đề nghị nhập kho** (.xlsx) và **file nhập đơn mua hàng MISA** (.xls), số đơn hàng = tên lô. Mở lại phiếu / file MISA cũ để sửa khi PO điều chỉnh. Tên công ty, NCC, MST, danh mục hàng nhập ở ⚙️ Cài đặt / 📚 Danh mục — chỉ lưu trên máy | Đang dùng |
 
 ## Cách dùng
 
@@ -43,6 +44,8 @@ Repo này **công khai**: ai cũng xem được mọi file và lịch sử thay 
 ## Lưu ý
 
 - **PA giá & Đề nghị thanh toán**: tên công ty, MST, logo, người đề nghị, **số tài khoản người nhận** và dữ liệu lô **không có trong repo** — bạn tự nhập ở ⚙️ Cài đặt, chỉ lưu trên trình duyệt. Nên bấm *Tải bản sao lưu (.json)* và cất vào Drive riêng (file `.json` này **không** đưa lên repo).
+
+- **Phiếu nhập kho & File MISA**: tên công ty, nhà cung cấp (mã NCC, địa chỉ, MST), tiền tố mã hàng, **danh mục hàng hoá** (mã, tên, số khối, giá gần nhất) và các PO đã làm **không có trong repo** — bạn nhập ở ⚙️ Cài đặt và nạp file ở 📚 Danh mục hàng, chỉ lưu trên trình duyệt. Nên bấm *Tải bản sao lưu (.json)* và cất vào Drive riêng (không đưa lên repo).
 
 - **Landed Cost** có biểu thuế sẵn trong `tools/landed-cost/tariff-data.js`. Khi có biểu thuế mới: nạp file ở tab *Thay đổi & cập nhật* (lưu trên máy), hoặc nhờ AI tạo lại file dữ liệu và tăng phiên bản.
 - **Không** commit dữ liệu thật (file mua hàng, hoá đơn, giá NCC) vào repo — repo đang public.

@@ -24,4 +24,14 @@ window.TOOLS = [
     category: 'Nhập khẩu',
     updated: '2026-10-26',
   },
+  {
+    id: 'po-receipt',
+    name: 'Phiếu nhập kho & File MISA',
+    icon: '📦',
+    description: 'Dán PO / lịch giao NCC → chia đợt → xuất Phiếu đề nghị nhập kho (.xlsx) và file nhập đơn mua hàng MISA (.xls) khớp tên lô.',
+    path: 'tools/po-receipt/index.html',
+    status: 'live',
+    category: 'Kho',
+    updated: '2026-10-26',
+  },
 ];
