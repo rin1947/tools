@@ -8,7 +8,7 @@ window.TOOLS = [
     id: 'landed-cost',
     name: 'Landed Cost Nhập Khẩu',
     icon: '🚢',
-    description: 'Giá về kho theo mã HS, C/O (MFN/ACFTA/RCEP), cước cont, kiểm tra chuyên ngành. Tra cứu HS, nhập/xuất Excel. (v10)',
+    description: 'Giá về kho theo mã HS, C/O (MFN/ACFTA/RCEP), cước cont, kiểm tra chuyên ngành. Tra cứu HS, nhập/xuất Excel. (v11)',
     path: 'tools/landed-cost/index.html',
     status: 'live',
     category: 'Nhập khẩu',

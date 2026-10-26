@@ -1,11 +1,11 @@
 /* =========================================================
-   Landed Cost v10 — LOGIC (tính toán, tra cứu HS, nhập/xuất Excel)
+   Landed Cost v11 — LOGIC (tính toán, tra cứu HS, nhập/xuất Excel)
    Giao diện: index.html · Style: style.css · Dữ liệu biểu thuế: tariff-data.js
    Công thức chi tiết: xem tab "Cách tính" trong tool.
    ========================================================= */
 "use strict";
 /* ---------------- storage helpers ---------------- */
-const TOOL_VER='v10 · 26/10/2026';
+const TOOL_VER='v11 · 26/10/2026';
 const LS={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}};
 const idb={open(){return new Promise((res,rej)=>{try{const r=indexedDB.open('landedcost',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}})},
   async get(k){try{const db=await this.open();return await new Promise(r=>{const q=db.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>r(q.result);q.onerror=()=>r(undefined)})}catch(e){return undefined}},
@@ -311,6 +311,15 @@ function compute(list,s,opt={}){
 
 /* ---------------- UI: settings ---------------- */
 const SFIELDS=['rate','date','c40','c20','frPct','ins','other','t04','t09','tHs','tAt'];
+function fillSettings(){SFIELDS.forEach(k=>{const el=$('#s_'+k);if(el)el.value=k==='date'?S.date:fmt(S[k],k==='ins'?3:0)});const cm=$('#s_coMode');if(cm)cm.value=S.coMode||'single'}
+function bindReset(){
+  const panel=$('#resetPanel');
+  $('#resetBtn').onclick=()=>{const n=P.length;$('#resetMsg').innerHTML=n?`Đang có <b>${n}</b> sản phẩm${P.some(p=>p.img)?' (kèm ảnh)':''}. Thao tác này không hoàn tác được.`:'Danh sách sản phẩm đang trống.';panel.hidden=false;panel.scrollIntoView({block:'nearest'})};
+  panel.addEventListener('click',e=>{const b=e.target.closest('[data-reset]');if(!b)return;const m=b.dataset.reset;panel.hidden=true;if(m==='cancel')return;
+    P=[];IMP=null;renderImport();$('#xlsMsg').textContent='';
+    if(m==='all'){S=Object.assign({},DEF_S,{v2:1});const d=new Date();d.setDate(d.getDate()+30);S.date=d.toISOString().slice(0,10);fillSettings()}
+    save();renderCards();toast(m==='all'?'Đã xoá sản phẩm và đưa thông số về mặc định':'Đã xoá toàn bộ sản phẩm')});
+}
 function bindSettings(){
   const cm=$('#s_coMode');cm.value=S.coMode||'single';cm.addEventListener('change',()=>{S.coMode=cm.value;save();recalc()});
   SFIELDS.forEach(k=>{const el=$('#s_'+k);el.value=k==='date'?S.date:fmt(S[k],k==='ins'?3:0);
@@ -414,7 +423,7 @@ function cardHTML(p,i){
   </div></article>`;
 }
 function renderCards(){
-  $('#plist').innerHTML=P.map(cardHTML).join('');
+  $('#plist').innerHTML=P.length?P.map(cardHTML).join(''):'<section class="panel"><p style="margin:0"><b>Chưa có sản phẩm.</b> Bấm <b>＋ Thêm sản phẩm</b> để nhập tay, hoặc <b>Nhập từ Excel</b> để nạp nhiều dòng từ file mẫu.</p></section>';
   $('#sampleBanner').hidden=!P.some(p=>p.sample);
   recalc();
 }
@@ -835,7 +844,7 @@ function bindTabs(){document.querySelectorAll('nav.tabs button').forEach(b=>b.ad
   document.querySelectorAll('[data-panel]').forEach(p=>p.hidden=p.dataset.panel!==b.dataset.tab);LS.set('lc_tab',b.dataset.tab)}));
   const t=LS.get('lc_tab','calc');const b=document.querySelector(`nav.tabs button[data-tab="${t}"]`);if(b)b.click()}
 (async function boot(){
-  bindTabs();bindSettings();bindCards();bindOvr();bindTariff();bindImport();
+  bindTabs();bindSettings();bindCards();bindOvr();bindTariff();bindImport();bindReset();
   $('#polList').innerHTML=POL_LIST.map(x=>`<option value="${x}">`).join('');
   $('#addBtn').onclick=()=>{const last=P[P.length-1];P.push({id:nextId++,code:'',name:'',fob:'',moq:'',cont:last?last.cont:'40',origin:last?last.origin:'CN',co:last&&last.co?last.co:'yes',hs:'',qty:'',group:'',annual:'',img:'',man:{}});save();renderCards();const c=document.querySelector('.pcard:last-child [data-k="code"]');if(c){c.focus();c.scrollIntoView({block:'center'})}};
   $('#clearSamples').onclick=()=>{P=P.filter(p=>!p.sample);if(!P.length)P.push({id:nextId++,code:'',name:'',fob:'',moq:'',cont:'40',origin:'CN',hs:'',qty:'',group:'',annual:'',img:'',man:{}});save();renderCards()};

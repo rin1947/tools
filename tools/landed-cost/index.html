@@ -7,8 +7,8 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚢</text></svg>">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap">
-<link rel="stylesheet" href="../../assets/theme.css">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="../../assets/theme.css?v=20261026a">
+<link rel="stylesheet" href="style.css?v=20261026a">
 </head>
 <body>
 <div class="wrap">
@@ -52,8 +52,18 @@
 
     <div class="sechead">
       <h2>Sản phẩm</h2>
-      <p class="muted small">Mã HS được gợi ý từ tên sản phẩm; bấm vào ô HS để chọn hoặc gõ mã.</p>
+      <div class="actions" style="margin:0;align-items:center"><span class="muted small">Mã HS được gợi ý từ tên sản phẩm; bấm vào ô HS để chọn hoặc gõ mã.</span><button id="resetBtn" title="Xoá danh sách sản phẩm đang có">↺ Làm mới</button></div>
     </div>
+    <section class="panel" id="resetPanel" hidden style="margin-bottom:14px">
+      <h3 style="margin:0 0 6px">Làm mới bảng tính?</h3>
+      <p class="small" style="margin:0 0 10px" id="resetMsg"></p>
+      <div class="actions" style="margin-top:0">
+        <button class="primary" data-reset="products">Xoá toàn bộ sản phẩm</button>
+        <button data-reset="all">Xoá sản phẩm + đưa thông số chung về mặc định</button>
+        <button class="ghost" data-reset="cancel">Huỷ</button>
+      </div>
+      <p class="small muted" style="margin:8px 0 0">Không xoá: điều chỉnh thuế suất thủ công và file biểu thuế đã nạp (tab Thay đổi &amp; cập nhật). Nên xuất Excel trước nếu cần giữ lại số liệu.</p>
+    </section>
     <div class="banner" id="sampleBanner" hidden>
       <span>Đây là sản phẩm <b>ví dụ</b> để bạn xem tool chạy thế nào. Xoá đi rồi nhập sản phẩm thật.</span>
       <button id="clearSamples">Xoá sản phẩm ví dụ</button>
@@ -158,9 +168,9 @@
 </div>
 <div class="toast" id="toast" hidden></div>
 
-<script src="../../assets/common.js"></script>
-<script src="tariff-data.js"></script>
+<script src="../../assets/common.js?v=20261026a"></script>
+<script src="tariff-data.js?v=20261026a"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=20261026a"></script>
 </body>
 </html>
