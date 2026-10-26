@@ -134,6 +134,19 @@ Phát triển riêng bởi người dùng, đã tách thành:
 - Cột file MISA giữ **đúng thứ tự và tên tiêu đề** của mẫu nhập đơn mua hàng MISA (`MISA_HEAD`) — không đổi.
 - Không đưa tên công ty, NCC, MST, mã hàng thật vào code/dữ liệu mẫu; dữ liệu mẫu dùng mã `VD-…`.
 
+### Tool `customs-entry` (Phiếu khai nhanh ECUS)
+
+| File | Nội dung |
+|---|---|
+| `index.html` | Giao diện: Cài đặt & thư viện, 1 Chứng từ, 2 Thông tin lô, 3 Danh sách hàng, 4 Kiểm tra chéo, 5 Phiếu khai theo ECUS (copy từng ô), 6 Ước tính thuế |
+| `parsers.js` | Đọc chữ PDF (pdf.js) của Bill / Commercial Invoice / Packing List / C/O. Chạy được bằng Node để kiểm thử. Bảng mã cảng `POL`, `POD` (kèm mã địa điểm lưu kho) |
+| `app.js` | Trạng thái lô, thư viện model, kiểm tra chéo, phiếu khai, ước tính thuế, xuất file danh sách hàng ECUS |
+
+- **Biểu thuế**: KHÔNG có bản riêng — đọc `../landed-cost/tariff-data.js` (hoặc biểu thuế người dùng nạp trong Landed Cost: IndexedDB `landedcost` / khoá `tariff`) và điều chỉnh `lc_ovr`. Thuế NK = ACFTA khi có C/O Form E + xuất xứ CN, ngược lại MFN.
+- **Thư viện model** có thể lấy từ `lc_products` của Landed Cost (cùng Mã SP). Không ghi ngược vào dữ liệu của Landed Cost.
+- **File danh sách hàng ECUS5**: `.xls` (biff8), sheet `Sheet1`, đúng 25 cột `ECUS_HEAD` trong app.js — không đổi tên / thứ tự cột. Ô trống để trống thật (null). ECUS tự tính thuế suất, tiền thuế.
+- Không đưa tên NCC, số hợp đồng, model thật vào code; dữ liệu mẫu dùng `VD-…`.
+
 ## 4. Quy tắc giao diện (bắt buộc)
 
 Phong cách: **hồng cute · xanh tre · gấu trúc**. Mềm, bo tròn, thân thiện nhưng số liệu phải rõ.
