@@ -36,9 +36,15 @@
 
   /* data = { lot, items:[{code,name,color,qty,price,hs,nk}], fees:[{group,name,pre,post,vatNo,inv,date,note,payeeInfo,payee}],
               rate, dn:[{sheet, company, to, requester, dept, city, date, lines:[{inv,content,amount}], advance, holder, acc, bank, due}] } */
-  function build(ExcelJS, data) {
+  function build(ExcelJS, data, opt = {}) {
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Gấu Bép';
+    if (!opt.onlyDn) buildCost(wb, data);
+    buildDn(wb, data.dn || [], opt.onlyDn ? [] : ['BẢNG KÊ CHI PHÍ', 'PHƯƠNG ÁN GIÁ']);
+    return wb;
+  }
+
+  function buildCost(wb, data) {
 
     /* ---------------- BẢNG KÊ CHI PHÍ ---------------- */
     const bk = wb.addWorksheet('BẢNG KÊ CHI PHÍ', { pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
@@ -140,9 +146,12 @@
       });
     pa.views = [{ state: 'frozen', ySplit: 6 }];
 
-    /* ---------------- ĐNTT ---------------- */
-    const names = new Set(['BẢNG KÊ CHI PHÍ', 'PHƯƠNG ÁN GIÁ']);
-    data.dn.forEach((d) => {
+  }
+
+  /* ---------------- ĐNTT: mỗi người nhận 1 sheet ---------------- */
+  function buildDn(wb, list, taken) {
+    const names = new Set(taken);
+    list.forEach((d) => {
       let name = ('ĐNTT ' + d.sheet).replace(/[\\/?*[\]:]/g, ' ').slice(0, 31).trim(); let n = 2;
       while (names.has(name)) name = (('ĐNTT ' + d.sheet).slice(0, 27) + ' ' + n++).trim();
       names.add(name);

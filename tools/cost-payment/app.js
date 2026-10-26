@@ -333,6 +333,7 @@
           <label>Đã tạm ứng <input data-dn="advance" value="${esc(st.advance)}" inputmode="decimal" style="width:120px"></label>
           <label>Thời hạn TT <input data-dn="due" type="date" value="${esc(st.due)}"></label>
           <button class="btn btn-primary btn-sm" data-print="${idx}">🖨️ In phiếu này</button>
+          <button class="btn btn-ghost btn-sm" data-xlsx="${idx}">📗 Xuất Excel phiếu này</button>
           ${!p.key ? '<span class="warn">⚠ Chưa có trong danh bạ — thêm STK ở Cài đặt</span>' : ''}
           ${pm.lines.length > ROWS_MIN ? `<span class="warn">Có ${pm.lines.length} dòng</span>` : ''}
         </div>
@@ -382,6 +383,8 @@
     dnState(payee)[k] = e.target.value; update();
   });
   $('dnList').addEventListener('click', (e) => {
+    const x = e.target.closest('[data-xlsx]');
+    if (x) { exportDn(x.closest('.dn-card').dataset.payee); return; }
     const b = e.target.closest('[data-print]'); if (!b) return;
     printDN(b.closest('.dn-card'));
   });
@@ -779,31 +782,55 @@
       const items = L.items.filter((it) => it.code || it.name || String(it.price).trim()).map((it) => ({
         code: it.code, name: it.name, color: it.color, qty: parseNum(it.qty), price: parseNum(it.price), hs: it.hs, nk: parseNum(it.nk),
       }));
-      const dn = [];
-      for (const pm of buildPayments()) {
-        const st = dnState(pm.payee);
-        const co = S.companies.find((x) => x.id === st.companyId) || S.companies[0] || {};
-        const p = S.payees.find((x) => x.key === pm.payee) || {};
-        const [lw, lh] = co.logo ? await imgSize(co.logo) : [0, 0];
-        dn.push({
-          sheet: pm.payee, company: co, logo: co.logo, logoW: lw, logoH: lh, to: S.to, requester: S.requester, dept: S.dept, city: S.city,
-          date: new Date(), lines: pm.lines, advance: parseNum(st.advance), holder: p.holder || pm.payee, acc: p.acc || '', bank: p.bank || '',
-          due: st.due ? new Date(st.due + 'T00:00:00Z') : '',
-        });
-      }
+      const dn = await buildDnData();
       const ExcelJS = await loadExcelJS();
       const wb = CostPaymentExport.build(ExcelJS, { lot: L, rate: c.rate, items, fees, dn });
-      const buf = await wb.xlsx.writeBuffer();
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-      a.download = `PAGia_${(L.code || 'lo').replace(/[^\w-]+/g, '')}_${GauBep.today()}.xlsx`;
-      document.body.append(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      toast('Đã xuất file Excel 🎉');
+      await saveWorkbook(wb, `PAGia_${fileTag(L.code || 'lo')}_${GauBep.today()}.xlsx`);
     } catch (err) {
       toast(err.message || 'Không xuất được file');
     }
   };
+
+  /* Phiếu đề nghị thanh toán dạng Excel: 1 người nhận (payee) hoặc tất cả (mỗi người 1 sheet) */
+  async function buildDnData(onlyPayee) {
+    const dn = [];
+    for (const pm of buildPayments()) {
+      if (onlyPayee && pm.payee !== onlyPayee) continue;
+      const st = dnState(pm.payee);
+      const co = S.companies.find((x) => x.id === st.companyId) || S.companies[0] || {};
+      const p = S.payees.find((x) => x.key === pm.payee) || {};
+      const [lw, lh] = co.logo ? await imgSize(co.logo) : [0, 0];
+      dn.push({
+        sheet: pm.payee, company: co, logo: co.logo, logoW: lw, logoH: lh, to: S.to, requester: S.requester, dept: S.dept, city: S.city,
+        date: (() => { const t = new Date(); return new Date(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate())); })(), lines: pm.lines, advance: parseNum(st.advance), holder: p.holder || pm.payee, acc: p.acc || '', bank: p.bank || '',
+        due: st.due ? new Date(st.due + 'T00:00:00Z') : '',
+      });
+    }
+    return dn;
+  }
+  const fileTag = (t) => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').replace(/[^\w-]+/g, '');
+  async function saveWorkbook(wb, name) {
+    const buf = await wb.xlsx.writeBuffer();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    a.download = name;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    toast('Đã xuất file Excel 🎉');
+  }
+  async function exportDn(onlyPayee) {
+    try {
+      const dn = await buildDnData(onlyPayee);
+      if (!dn.length) { toast('Chưa có phiếu nào để xuất'); return; }
+      const ExcelJS = await loadExcelJS();
+      const wb = CostPaymentExport.build(ExcelJS, { dn }, { onlyDn: true });
+      const who = onlyPayee ? fileTag(onlyPayee) : 'TatCa';
+      await saveWorkbook(wb, `DNTT_${who}_${fileTag(L.code || 'lo')}_${GauBep.today()}.xlsx`);
+    } catch (err) {
+      toast(err.message || 'Không xuất được file');
+    }
+  }
+  $('btnExportDnAll').onclick = () => exportDn(null);
 
   /* ======================= LÔ MỚI / MẪU / LÀM MỚI ======================= */
   $('btnNewLot').onclick = () => {
