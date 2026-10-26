@@ -151,6 +151,7 @@ Phong cách: **hồng cute · xanh tre · gấu trúc**. Mềm, bo tròn, thân 
 - **Số tiền:** hiển thị bằng `GauBep.fmt.vnd()`; đọc ô nhập bằng `GauBep.parseNum()` (hiểu cả `1.234,5` và `1,234.5`).
 - **Lưu trạng thái:** `GauBep.store.get/set` với khoá `'<tool-id>:v1'`. Đổi cấu trúc dữ liệu → tăng `v2`.
 - **Xuất Excel:** `GauBep.exportXlsx(tênFile, [{ name, rows, colWidths }])`. Số xuất ra dạng **number** (không phải chuỗi đã format). Tên file: `<TienTo>_<tên>_<ddmmyy>.xlsx` (dùng `GauBep.today()`).
+- **Chống cache khi cập nhật:** trong `index.html` của tool, file CSS/JS nội bộ gắn đuôi `?v=YYYYMMDDx` (vd `app.js?v=20261026c`). Mỗi lần sửa tool phải **tăng** đuôi này, nếu không trình duyệt có thể vẫn chạy bản cũ.
 - **Thư viện ngoài:** chỉ khi thật cần, chỉ lấy từ `cdnjs.cloudflare.com`, và tải lười (lazy) như `loadSheetJS` trong `common.js`.
 - **Không** gọi API ngoài với dữ liệu người dùng. **Không** đưa dữ liệu thật (giá, NCC, hoá đơn) vào repo — chỉ dữ liệu mẫu.
 - **Dữ liệu tham chiếu** (mã HS, thuế suất, phí…) để ở file `.js` riêng trong thư mục tool, có comment nguồn + trường `checked` cho biết đã đối chiếu hay chưa.

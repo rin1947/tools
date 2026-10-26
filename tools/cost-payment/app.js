@@ -160,7 +160,7 @@
 
   function joinNames(l) {
     const t = l.fees.map((f) => f.name).join(', ');
-    return t.length <= 110 ? t : `Thanh toán HĐ ${l.inv} (${l.fees.length} khoản phí)`;
+    return t.length <= 160 ? t : `Thanh toán HĐ ${l.inv} (${l.fees.length} khoản phí)`;
   }
 
   /* ======================= GIAO DIỆN: LÔ HÀNG ======================= */
@@ -339,6 +339,8 @@
           <button class="btn btn-primary btn-sm" data-print="${idx}">🖨️ In phiếu này</button>
           <button class="btn btn-ghost btn-sm" data-xlsx="${idx}">📗 Xuất Excel phiếu này</button>
           ${!p.key ? '<span class="warn">⚠ Chưa có trong danh bạ — thêm STK ở Cài đặt</span>' : ''}
+          ${!String(L.code).trim() ? '<span class="warn">⚠ Chưa nhập Lô hàng (bước 1)</span>' : ''}
+          ${!L.items.some((it) => String(it.name || it.code || '').trim()) ? '<span class="warn">⚠ Chưa có tên hàng (bước 2)</span>' : ''}
           ${pm.lines.length > ROWS_MIN ? `<span class="warn">Có ${pm.lines.length} dòng</span>` : ''}
         </div>
         <div class="dn-paper">
