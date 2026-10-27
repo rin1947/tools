@@ -88,7 +88,10 @@
 
   /* ======================= TÊN LÔ ======================= */
   const whOf = () => S.warehouses.find((w) => w.id === st.wh) || S.warehouses[0] || { name: '', short: '', misa: '' };
-  const supOf = () => S.suppliers.find((s) => s.id === st.supplier) || null;
+  // NCC của PO; PO chưa chọn (hoặc NCC đã bị xoá) → dùng NCC mặc định, hoặc NCC duy nhất trong cài đặt
+  const supOf = () => S.suppliers.find((s) => s.id === st.supplier)
+    || S.suppliers.find((s) => s.id === S.defaultSupplier) || (S.suppliers.length === 1 ? S.suppliers[0] : null);
+  function syncSupplier() { const s = supOf(); if (s && st.supplier !== s.id) st.supplier = s.id; }
   function autoName(i) {
     const base = [st.poNo || 'PO', whOf().short].filter(Boolean).join(' ');
     return st.lots.length === 1 && S.noSuffix ? base : `${base} đợt ${i + 1}`;
@@ -185,6 +188,7 @@
 
   /* ======================= RENDER ======================= */
   function renderPo() {
+    syncSupplier();
     $('poNo').value = st.poNo; $('poDate').value = st.poDate; $('poTotal').value = st.poTotal; $('misaMode').value = st.misaMode || 'lot';
     $('poSupplier').innerHTML = `<option value="">— chọn NCC —</option>` + S.suppliers.map((s) => `<option value="${s.id}">${esc(s.code)} · ${esc(s.name)}</option>`).join('');
     $('poSupplier').value = st.supplier || '';
@@ -257,7 +261,8 @@
     if (!Object.keys(CAT).length) out.push(['warn', 'Danh mục hàng trên máy này đang trống → tool chưa có số khối / tên hàng để tự điền. Vào 📚 Danh mục hàng, nạp file data sản phẩm (list Bosch) — chỉ cần làm 1 lần.']);
     if (!S.prefix && st.items.some((it) => it.model && up(it.code) === up(it.model)))
       out.push(['bad', 'Chưa đặt tiền tố mã hàng (vd ABC-) → mã hàng MISA đang bằng model. Vào 📚 Danh mục hàng hoặc ⚙️ Cài đặt để nhập, tool tự sửa mã.']);
-    if (!supOf()) out.push(['warn', 'Chưa chọn nhà cung cấp (file MISA sẽ thiếu mã NCC).']);
+    if (!supOf()) out.push(['bad', 'Chưa có nhà cung cấp → file MISA sẽ trống Mã / Tên NCC. Vào ⚙️ Cài đặt thêm NCC rồi chọn ở bước 1.']);
+    else if (!String(supOf().code || '').trim()) out.push(['bad', `NCC "${supOf().name}" chưa có Mã NCC (MISA) — nhập ở ⚙️ Cài đặt.`]);
     st.items.forEach((it) => {
       const r = rest(it); const nm = it.model || '(chưa có model)';
       if (!it.model) out.push(['bad', 'Có dòng chưa nhập model.']);
