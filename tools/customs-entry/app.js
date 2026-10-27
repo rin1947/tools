@@ -304,19 +304,17 @@
   }
   /* OCR (tesseract.js chạy trên máy; lần đầu tải bộ đọc chữ tiếng Anh ~3 MB) — cùng cấu hình tool Phiếu nhập kho */
   const TESS = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/';
-  let ocrWorker = null;
-  async function getOcr() {
-    if (ocrWorker) return ocrWorker;
+  const OCR_LANG = { eng: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0/4.0.0_best_int', vie: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/vie@1.0.0/4.0.0_best_int' };
+  const ocrWorkers = {};
+  async function getOcr(lang) {
+    if (ocrWorkers[lang]) return ocrWorkers[lang];
     if (!window.Tesseract) await loadScript(TESS + 'tesseract.min.js');
-    ocrWorker = await window.Tesseract.createWorker('eng', 1, {
-      workerPath: TESS + 'worker.min.js', corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1',
-      langPath: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0/4.0.0_best_int', gzip: true,
-    });
-    await ocrWorker.setParameters({ tessedit_pageseg_mode: '3' });
-    return ocrWorker;
+    const w = await window.Tesseract.createWorker(lang, 1, { workerPath: TESS + 'worker.min.js', corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1', langPath: OCR_LANG[lang], gzip: true });
+    await w.setParameters({ tessedit_pageseg_mode: '3' });
+    return (ocrWorkers[lang] = w);
   }
-  async function ocrCanvases(canvases, name) {
-    const w = await getOcr(); let text = '';
+  async function ocrCanvases(canvases, name, lang = 'eng') {
+    const w = await getOcr(lang); let text = '';
     for (let i = 0; i < canvases.length; i++) {
       GauBep.toast(`🔎 Đang đọc bản scan ${name}: trang ${i + 1}/${canvases.length}…`);
       const { data } = await w.recognize(canvases[i]); text += data.text + '\n';
@@ -349,15 +347,17 @@
     return xml.replace(/<w:tab\/>/g, '\t').replace(/<w:br\/>/g, '\n').replace(/<\/w:p>/g, '\n').replace(/<[^>]+>/g, '')
       .split('\n').map((s) => { div.innerHTML = s; return div.value; }).join('\n');
   }
-  /* Đọc chữ của 1 file bất kỳ → { text, ocr } */
-  async function fileText(f) {
+  /* Đọc chữ của 1 file bất kỳ → { text, ocr }. lang: 'eng' cho chứng từ tiếng Anh, 'vie' cho tem phụ tiếng Việt */
+  async function fileText(f, lang = 'eng') {
     if (/\.docx$/i.test(f.name)) return { text: await docxText(f) };
     if (/\.doc$/i.test(f.name)) throw new Error('file Word đời cũ (.doc) — mở bằng Word, lưu lại thành .docx hoặc PDF rồi nạp lại');
-    if (/\.(png|jpe?g|webp|bmp)$/i.test(f.name) || /^image\//.test(f.type)) return { text: await ocrCanvases([await imageCanvas(f)], f.name), ocr: true };
-    const doc = await openPdf(f);
+    if (/\.(png|jpe?g|webp|bmp)$/i.test(f.name) || /^image\//.test(f.type)) return { text: await ocrCanvases([await imageCanvas(f)], f.name, lang), ocr: true };
+    let doc;
+    try { doc = await openPdf(f); }
+    catch (e) { throw new Error(/\.ai$/i.test(f.name) ? 'file .ai này không lưu kèm bản PDF — trong Illustrator chọn Save As PDF (hoặc xuất ảnh PNG) rồi nạp lại' : 'không mở được file PDF'); }
     const t = await pdfText(doc);
     if (t.replace(/\s/g, '').length >= 40) return { text: t };
-    return { text: await ocrCanvases(await pdfCanvases(doc), f.name), ocr: true };
+    return { text: await ocrCanvases(await pdfCanvases(doc, lang === 'vie' ? 1 : 4), f.name, lang), ocr: true };
   }
 
   /* ======================= NẠP CHỨNG TỪ ======================= */
@@ -595,7 +595,7 @@
       const ean = t.barcode ? eanFix(t.barcode) : null;
       return `<div class="tem-card" data-code="${esc(code)}">
         <div class="tem-form">
-          <h3 class="sub-title" style="margin-top:0">🏷️ ${esc(code)}${m.invName ? ` <span class="muted small">· Invoice: ${esc(m.invName)}</span>` : ''}</h3>
+          <h3 class="sub-title" style="margin-top:0">🏷️ ${esc(code)}${m.invName ? ` <span class="muted small">· Invoice: ${esc(m.invName)}</span>` : ''}${m.temFile ? ` <span class="muted small">· tem: ${esc(m.temFile)}</span>` : ''}</h3>
           ${unknown.length ? `<div class="note">✍️ Tên riêng chưa dịch được: <b>${esc(unknown.join(', '))}</b> — sửa tay ở ô bên dưới (vd tên tiếng Việt in trên tem cũ). Sửa ô Nhà sản xuất / Địa chỉ thì lưu cho cả nhà cung cấp.</div>` : ''}
           <div class="form-grid tem-grid">${TEM_FIELDS.map(([k, lbl, tip]) => {
             const isAuto = !has(m.tem[k]) && has(t[k]);
@@ -610,6 +610,7 @@
           </div>
           ${ean && !ean.ok ? '<div class="warn">⚠️ Mã vạch không đúng chuẩn EAN-13 (sai số kiểm tra hoặc không đủ 13 số).</div>' : ''}
           <div class="toolbar" style="margin-top:10px">
+            <label class="btn btn-pink btn-sm file-btn" title="PDF / .ai / ảnh chụp tem đã in — tool đọc tên hàng, thông số, nhà sản xuất, nhà nhập khẩu">📥 Nạp tem có sẵn<input type="file" accept=".pdf,.ai,image/*" data-temfile hidden></label>
             <button type="button" class="btn btn-ghost btn-sm" data-act="copytem">📋 Copy nội dung tem</button>
             <button type="button" class="btn btn-ghost btn-sm" data-act="printtem">🖨️ In tem</button>
             <button type="button" class="btn btn-ghost btn-sm" data-act="resettem" title="Bỏ các ô đã sửa tay, lấy lại giá trị tự động">↺ Lấy lại tự động</button>
@@ -622,6 +623,7 @@
   }
   $('#temList').addEventListener('change', async (e) => {
     const card = e.target.closest('.tem-card'); if (!card) return; const code = card.dataset.code; const m = ensureModel(code);
+    if (e.target.dataset.temfile !== undefined) { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) importTem(fs.slice(0, 1), code); return; }
     if (e.target.dataset.img !== undefined) {
       const f = e.target.files[0]; if (!f) return;
       try { m.img = await shrinkImage(f); const s = S.sups.find((y) => y.id === m.supId) || sup(); if (s.id && !s.logo) s.logo = m.img; saveSet(); later(); }
@@ -650,6 +652,35 @@
       window.addEventListener('afterprint', done); window.print(); setTimeout(done, 1500);
     }
   });
+  /* Nạp tem có sẵn (PDF / .ai / ảnh) → điền các ô tem của model. Không đọc mã vạch.
+     forCode: model của thẻ đang bấm; nạp ở nút chung thì tìm model theo dòng "Model :" trên tem. */
+  async function importTem(files, forCode) {
+    for (const f of files) {
+      try {
+        GauBep.toast(`🔎 Đang đọc tem ${f.name}… (lần đầu tải bộ đọc chữ tiếng Việt ~1,5 MB)`);
+        const { text } = await fileText(f, 'vie');
+        const x = P.tem(text);
+        const codes = temCodes();
+        let code = forCode || (x.model && codes.find((c) => normKey(c) === normKey(x.model))) || (codes.length === 1 ? codes[0] : '');
+        if (!code && x.model) code = x.model;
+        if (!code) { GauBep.toast(`${f.name}: không thấy dòng "Model" trên tem — bấm 📥 ở đúng thẻ model để nạp`); continue; }
+        const m = ensureModel(code);
+        const keys = ['nameVi', 'brand', 'voltage', 'power', 'year', 'pack', 'control', 'sizeP', 'sizeBox', 'wP', 'wBox', 'feature', 'makerVi', 'makerAddrVi'];
+        const got = keys.filter((k) => x[k]); got.forEach((k) => { m.tem[k] = x[k]; });
+        const s = S.sups.find((y) => y.id === m.supId) || sup();
+        if (s.id) { if (x.makerVi && !s.nameVi) s.nameVi = x.makerVi; if (x.makerAddrVi && !s.addrVi) s.addrVi = x.makerAddrVi; if (x.brand && !s.brand) s.brand = x.brand; }
+        let imp = '';
+        if (x.importerName && !S.gen.importerName) { S.gen.importerName = x.importerName; imp = ', nhà nhập khẩu'; }
+        if (x.importerAddr && !S.gen.importerAddr) S.gen.importerAddr = x.importerAddr;
+        if (x.model && normKey(x.model) !== normKey(code)) GauBep.toast(`⚠️ Tem ghi model ${x.model}, đang nạp cho ${code} — kiểm tra lại`);
+        else GauBep.toast(`Đã đọc tem ${code}: ${got.length} ô${imp} 🐼`);
+        m.temFile = f.name;
+      } catch (e) { GauBep.toast(`${f.name}: ${e.message || 'không đọc được tem'}`); }
+    }
+    saveSet(); renderAll();
+  }
+  $('#fileTem').addEventListener('change', (e) => { importTem([...e.target.files]); e.target.value = ''; });
+
   function shrinkImage(file) {
     return new Promise((res, rej) => {
       const fr = new FileReader();

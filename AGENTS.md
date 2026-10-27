@@ -149,6 +149,7 @@ Phát triển riêng bởi người dùng, đã tách thành:
 
 - **Biểu thuế**: KHÔNG có bản riêng — đọc `../landed-cost/tariff-data.js` (hoặc biểu thuế người dùng nạp trong Landed Cost: IndexedDB `landedcost` / khoá `tariff`) và điều chỉnh `lc_ovr`. Thuế NK = ACFTA khi có C/O Form E + xuất xứ CN, ngược lại MFN.
 - **Mã HS liên kết Landed Cost**: model nào có sản phẩm cùng mã (hoặc mã chứa nhau, ≥ 5 ký tự) trong `lc_products` thì lấy HS + tên + trọng lượng + nhà máy từ đó; nút "🚢 Lấy HS từ Landed Cost" cập nhật lại cho cả lô; Kiểm tra báo khi HS phiếu khai khác Landed Cost. Bảng gợi ý HS đọc **bảng từ khoá `const KEYWORDS=[…]` ngay trong `../landed-cost/app.js`** (fetch + tách mảng, không sửa Landed Cost) — nếu đổi tên / cấu trúc biến này ở Landed Cost thì sửa `loadLcKeywords()` cho khớp. Không ghi ngược vào dữ liệu của Landed Cost.
+- **Nạp tem có sẵn** (mục 4, `importTem` + `CustomsParsers.tem`): PDF / .ai (bản lưu kèm PDF) / ảnh chụp tem → điền tên hàng, nhãn hiệu, thông số, nhà sản xuất, nhà NK & PP (nhà NK ghi vào ⚙️ Cài đặt nếu đang trống). Ảnh / bản không có chữ đọc bằng OCR **tiếng Việt** (`@tesseract.js-data/vie`). **Không đọc mã vạch** (người dùng không cần).
 - **Thư viện model** (`S.models[mã]`): `hs`, `hsSrc` ('lc' | ''), `unit`, `bt`, `tem{…}` (chỉ lưu ô đã sửa tay; ô trống lấy tự động từ Landed Cost / hợp đồng / Invoice / PL), `img`, `desc` + `descManual`. Mô tả khai HQ tạo từ tem (`genDesc`). Tên + địa chỉ NSX tiếng Việt sửa ở tem thì lưu vào NCC (`nameVi`, `addrVi`) để dùng lại.
 - **File danh sách hàng ECUS5**: `.xls` (biff8), sheet `Sheet1`, đúng 25 cột `ECUS_HEAD` trong app.js — không đổi tên / thứ tự cột. Ô trống để trống thật (null). ECUS tự tính thuế suất, tiền thuế.
 - Không đưa tên NCC, số hợp đồng, model, mã vạch thật vào code; dữ liệu mẫu dùng `VD-…`.
@@ -187,7 +188,7 @@ Phong cách: **hồng cute · xanh tre · gấu trúc**. Mềm, bo tròn, thân 
 - **Xuất Excel:** `GauBep.exportXlsx(tênFile, [{ name, rows, colWidths }])`. Số xuất ra dạng **number** (không phải chuỗi đã format). Tên file: `<TienTo>_<tên>_<ddmmyy>.xlsx` (dùng `GauBep.today()`).
 - **Chống cache khi cập nhật:** trong `index.html` của tool, file CSS/JS nội bộ gắn đuôi `?v=YYYYMMDDx` (vd `app.js?v=20261026c`). Mỗi lần sửa tool phải **tăng** đuôi này, nếu không trình duyệt có thể vẫn chạy bản cũ.
 - **Thư viện ngoài:** chỉ khi thật cần, chỉ lấy từ `cdnjs.cloudflare.com`, và tải lười (lazy) như `loadSheetJS` trong `common.js`.
-  Ngoại lệ duy nhất: OCR (tesseract.js 5.1.1 + tesseract.js-core + dữ liệu chữ `@tesseract.js-data/eng`) lấy từ `cdn.jsdelivr.net` (cdnjs không có bộ core/dữ liệu); ghim đúng phiên bản, ảnh vẫn xử lý trên máy, không gửi đi.
+  Ngoại lệ duy nhất: OCR (tesseract.js 5.1.1 + tesseract.js-core + dữ liệu chữ `@tesseract.js-data/eng`, và `@tesseract.js-data/vie` cho tem phụ) lấy từ `cdn.jsdelivr.net` (cdnjs không có bộ core/dữ liệu); ghim đúng phiên bản, ảnh vẫn xử lý trên máy, không gửi đi.
 - **Không** gọi API ngoài với dữ liệu người dùng. **Không** đưa dữ liệu thật (giá, NCC, hoá đơn) vào repo — chỉ dữ liệu mẫu.
 - **Dữ liệu tham chiếu** (mã HS, thuế suất, phí…) để ở file `.js` riêng trong thư mục tool, có comment nguồn + trường `checked` cho biết đã đối chiếu hay chưa.
 - Tên biến/hàm tiếng Anh; nội dung hiển thị và comment giải thích nghiệp vụ tiếng Việt.
