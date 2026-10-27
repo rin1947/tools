@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Phiếu nhập kho &amp; File MISA</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
-  <link rel="stylesheet" href="../../assets/theme.css?v=20261027d">
-  <link rel="stylesheet" href="style.css?v=20261027d">
+  <link rel="stylesheet" href="../../assets/theme.css?v=20261027e">
+  <link rel="stylesheet" href="style.css?v=20261027e">
 </head>
 <body>
   <main class="page">
@@ -15,7 +15,7 @@
       <section class="hero no-print">
         <div style="font-size:56px">📦</div>
         <div>
-          <h1>Phiếu nhập kho &amp; File MISA <span class="badge live">bản 27/10 · 3</span></h1>
+          <h1>Phiếu nhập kho &amp; File MISA <span class="badge live">bản 27/10 · 4</span></h1>
           <p>Từ PO và lịch giao của nhà cung cấp → chia đợt giao → xuất <b>Phiếu đề nghị nhập kho</b> (.xlsx) và <b>file nhập đơn mua hàng MISA</b> (.xls), số đơn hàng khớp với tên lô trên phiếu.</p>
         </div>
         <span id="bamboo"></span>
@@ -86,13 +86,17 @@
       <!-- ===================== DANH MỤC HÀNG ===================== -->
       <section class="card no-print" id="catalogCard" hidden>
         <h2 class="section-title"><span class="num">📚</span> Danh mục hàng (lưu trên máy này)</h2>
-        <p class="help-text"><b>Nguồn chính: file data sản phẩm của NCC</b> (vd list sản phẩm của hãng, có cột <b>Model</b>, <b>Tên sản phẩm</b>, <b>CBM</b>).
-          Mỗi khi NCC gửi bản mới (thêm model, đổi kích thước thùng) → bấm nạp lại: tool <b>cập nhật số khối theo bản mới nhất</b>, thêm mã mới,
-          báo mã nào đổi số khối, và cập nhật luôn PO đang làm.
-          Tuỳ chọn: nạp thêm sheet <b>Danh sách hàng hoá</b> của MISA (cột Mã, Tên) để tool dùng đúng mã + tên hàng như trên MISA và cảnh báo mã chưa tạo.</p>
+        <p class="help-text">Danh mục ghép từ 2 nguồn, mỗi khi có bản mới thì bấm nạp lại đúng nút — tool tự cập nhật, báo mã mới / mã thay đổi và cập nhật luôn PO đang làm:</p>
+        <ul class="help-text src-list">
+          <li><b>File data sản phẩm của NCC</b> (vd list sản phẩm của hãng: cột <b>Model</b>, <b>Tên sản phẩm</b>, <b>CBM</b>) → quyết định <b>số khối</b>.</li>
+          <li><b>Danh sách hàng hoá xuất từ MISA</b> (cột <b>STT</b>, <b>Mã</b>, <b>Tên</b>) → quyết định <b>mã hàng</b> và <b>tên hàng</b> in trên phiếu / file MISA; mã chưa có trên MISA sẽ được cảnh báo.</li>
+        </ul>
         <div class="toolbar">
-          <label class="btn btn-primary btn-sm file-btn">📥 Nạp / cập nhật file data sản phẩm (.xlsx / .xls)
+          <label class="btn btn-primary btn-sm file-btn">📥 File data sản phẩm NCC
             <input type="file" id="fileCatalog" accept=".xlsx,.xls" multiple hidden>
+          </label>
+          <label class="btn btn-primary btn-sm file-btn">📥 Danh sách hàng hoá MISA
+            <input type="file" id="fileMisaList" accept=".xlsx,.xls" multiple hidden>
           </label>
           <label class="inline-field">Tiền tố mã hàng <span class="hint" tabindex="0" data-tip="Mã hàng MISA = tiền tố + model, vd ABC- + X100 = ABC-X100. Tự nhận khi nạp danh sách hàng hoá MISA.">?</span>
             <input id="cat_prefix" class="w-sm" placeholder="vd ABC-"></label>
@@ -198,10 +202,10 @@
     </div>
   </main>
 
-  <script src="../../assets/common.js?v=20261027d"></script>
-  <script src="parsers.js?v=20261027d"></script>
-  <script src="export.js?v=20261027d"></script>
-  <script src="xls-writer.js?v=20261027d"></script>
-  <script src="app.js?v=20261027d"></script>
+  <script src="../../assets/common.js?v=20261027e"></script>
+  <script src="parsers.js?v=20261027e"></script>
+  <script src="export.js?v=20261027e"></script>
+  <script src="xls-writer.js?v=20261027e"></script>
+  <script src="app.js?v=20261027e"></script>
 </body>
 </html>

@@ -698,7 +698,9 @@
     const q = up($('catSearch').value);
     const all = Object.entries(CAT).sort((a, b) => a[0].localeCompare(b[0]));
     const list = all.filter(([k, v]) => !q || k.includes(q) || up(v.name).includes(q) || up(v.code).includes(q));
-    $('catInfo').textContent = `${all.length} mã${q ? ` · tìm thấy ${list.length}` : ''}${S.lastCatalog ? ` · lần nạp gần nhất: ${S.lastCatalog.file} (${S.lastCatalog.at})` : ''}`;
+    $('catInfo').textContent = `${all.length} mã${q ? ` · tìm thấy ${list.length}` : ''}`
+      + `${S.lastCatalog ? ` · data SP: ${S.lastCatalog.file} (${S.lastCatalog.at})` : ''}`
+      + `${S.lastMisaList ? ` · DS MISA: ${S.lastMisaList.file} (${S.lastMisaList.at})` : ''}`;
     if (document.activeElement !== $('cat_prefix')) $('cat_prefix').value = S.prefix || '';
     $('catBody').innerHTML = list.slice(0, 300).map(([k, v]) => `<tr data-m="${esc(k)}">
       <td><b>${esc(k)}</b></td><td><input class="w-md" data-ck="code" value="${esc(v.code)}"></td><td><input class="w-xl" data-ck="name" value="${esc(v.name)}"></td>
@@ -735,43 +737,66 @@
        tên lấy theo file này nếu mã chưa có tên từ danh sách MISA.
      - Danh sách hàng hoá MISA (cột Mã có tiền tố, Tên): quyết định MÃ HÀNG và TÊN HÀNG.
      Sau khi nạp, các dòng của PO đang làm được cập nhật số khối (nếu chưa sửa tay) và điền tên còn trống. */
-  $('fileCatalog').onchange = async (e) => {
+  /* source: 'supplier' = file data sản phẩm NCC (Model / Tên / CBM) · 'misa' = Danh sách hàng hoá xuất từ MISA (STT / Mã / Tên)
+     · 'auto' = tự nhận theo tiêu đề cột */
+  async function importCatalog(files, source) {
     const before = JSON.parse(JSON.stringify(CAT));
     let total = 0;
-    for (const f of e.target.files) {
+    for (const f of files) {
       try {
-        const sheets = await readAoa(f); let n = 0, fresh = 0; const changed = [];
-        sheets.forEach((sh) => { const rows = P.catalogSheet(sh.aoa); detectPrefix(rows); rows.forEach((r) => {
+        const sheets = await readAoa(f); let n = 0, fresh = 0; const cbmCh = [], nameCh = [], seen = new Set();
+        let anyMisa = false;
+        sheets.forEach((sh) => { const rows = P.catalogSheet(sh.aoa); if (source === 'misa') rows.forEach((r) => { r.kind = 'misa'; });
+          detectPrefix(rows); rows.forEach((r) => {
           const pre = up(S.prefix);
-          const isMisa = r.kind === 'misa' || (pre && r.code.startsWith(pre));
+          const isMisa = source === 'misa' || (source === 'auto' && (r.kind === 'misa' || (pre && r.code.startsWith(pre))));
+          if (isMisa) anyMisa = true;
           const model = modelOf(r.code);
           const cur = CAT[model] || {};
           const ow = isMisa ? ['code', 'name'] : ['cbm', 'price', ...(cur.misaList ? [] : ['name'])];
           const res = catLearn({ model, code: isMisa ? r.code : undefined, name: r.name, cbm: r.cbm, price: r.price,
             misa: isMisa, misaList: isMisa, src: isMisa ? cur.src : f.name }, ow);
           if (!res) return;
-          n++; if (res.isNew) fresh++;
-          res.changes.filter((c) => c[0] === 'cbm').forEach((c) => changed.push(`${model}: ${fmt.num(c[1], 4)} → ${fmt.num(c[2], 4)}`));
+          n++; seen.add(model); if (res.isNew) fresh++;
+          res.changes.forEach((c) => {
+            if (c[0] === 'cbm') cbmCh.push(`${model}: ${fmt.num(c[1], 4)} → ${fmt.num(c[2], 4)}`);
+            if (c[0] === 'name' || c[0] === 'code') nameCh.push(`${model}: ${c[1]} → ${c[2]}`);
+          });
         }); });
         total += n;
-        log(`📚 ${esc(f.name)}: ${n} mã — <b>${fresh}</b> mã mới, <b>${changed.length}</b> mã đổi số khối${changed.length ? ` (${esc(changed.slice(0, 8).join('; '))}${changed.length > 8 ? '…' : ''})` : ''}.`, n > 0);
-        if (n) { S.lastCatalog = { file: f.name, at: new Date().toISOString().slice(0, 16).replace('T', ' ') }; saveSet(); }
+        const short = (a) => (a.length ? ` (${esc(a.slice(0, 6).join('; '))}${a.length > 6 ? '…' : ''})` : '');
+        if (anyMisa) {
+          // mã trước đây có trên MISA mà bản mới không còn → bỏ đánh dấu "có trên MISA"
+          const gone = Object.entries(CAT).filter(([k, v]) => v.misaList && !seen.has(k)).map(([k]) => k);
+          gone.forEach((k) => { CAT[k].misaList = false; CAT[k].misa = false; });
+          log(`📚 ${esc(f.name)} (danh sách MISA): ${n} mã — <b>${fresh}</b> mã mới, <b>${nameCh.length}</b> mã đổi tên / mã${short(nameCh)}`
+            + `${gone.length ? `, <b>${gone.length}</b> mã không còn trên MISA${short(gone)}` : ''}.`, n > 0);
+          if (n) S.lastMisaList = { file: f.name, at: new Date().toISOString().slice(0, 16).replace('T', ' ') };
+        } else {
+          log(`📚 ${esc(f.name)} (data sản phẩm): ${n} mã — <b>${fresh}</b> mã mới, <b>${cbmCh.length}</b> mã đổi số khối${short(cbmCh)}.`, n > 0);
+          if (n) S.lastCatalog = { file: f.name, at: new Date().toISOString().slice(0, 16).replace('T', ' ') };
+        }
+        if (!n) log(`📚 ${esc(f.name)}: không thấy cột Mã/Model + Tên — kiểm tra lại file.`);
+        saveSet();
       } catch (err) { log(`📚 ${esc(f.name)}: lỗi — ${esc(err.message)}`); }
     }
-    // cập nhật PO đang làm theo danh mục mới
+    // cập nhật PO đang làm theo danh mục mới (ô chưa sửa tay = trống hoặc đang bằng giá trị cũ của danh mục)
     let upd = 0;
     st.items.forEach((it) => {
       const c = catFind(it.model); if (!c) return;
       const old = before[it.model] || {};
       const cb = parseNum(it.cbm);
       if (c.cbm > 0 && (!(cb > 0) || Math.abs(cb - (old.cbm || 0)) < 1e-9) && Math.abs(cb - c.cbm) > 1e-9) { it.cbm = c.cbm; upd++; }
-      if (!String(it.name || '').trim() && c.name) { it.name = c.name; upd++; }
-      if (c.code && (!it.code || it.code === codeOf(it.model)) && it.code !== c.code) { it.code = c.code; upd++; }
+      const nm = String(it.name || '').trim();
+      if (c.name && nm !== c.name && (!nm || nm === old.name)) { it.name = c.name; upd++; }
+      if (c.code && up(it.code) !== up(c.code) && (!it.code || up(it.code) === up(it.model) || up(it.code) === codeOf(it.model) || up(it.code) === up(old.code))) { it.code = c.code; upd++; }
     });
     if (upd) log(`🔄 Đã cập nhật ${upd} ô (số khối / tên / mã) của PO đang làm theo danh mục mới.`, true);
-    saveCat(); e.target.value = ''; renderCatalog(); renderAll();
+    saveCat(); renderCatalog(); renderAll();
     toast(`Đã nạp ${total} mã vào danh mục 🐼`);
-  };
+  }
+  $('fileCatalog').onchange = async (e) => { await importCatalog([...e.target.files], 'supplier'); e.target.value = ''; };
+  $('fileMisaList').onchange = async (e) => { await importCatalog([...e.target.files], 'misa'); e.target.value = ''; };
   $('btnClearCatalog').onclick = () => { if (confirm('Xoá toàn bộ danh mục hàng trên máy này?')) { CAT = {}; saveCat(); renderCatalog(); renderAll(); } };
   $('btnCatalog').onclick = () => { renderCatalog(); $('catalogCard').hidden = false; $('catalogCard').scrollIntoView({ behavior: 'smooth' }); };
   $('btnCloseCatalog').onclick = () => { $('catalogCard').hidden = true; renderAll(); };
