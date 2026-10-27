@@ -6,7 +6,8 @@
    PoParsers.paste(text, known)      bảng dán từ Excel / email NCC → { kind, rows }
    PoParsers.table(aoa, known)       bảng đọc từ file Excel (PO / lịch giao) → { kind, rows } (cùng cách nhận cột như dán)
    PoParsers.pdfLines(lines, known)  dòng chữ của PDF có chữ (PO / hoá đơn) → { rows, warnings }
-   PoParsers.invoiceXml(text)        hoá đơn điện tử XML (chuẩn TT78) → { rows }
+   PoParsers.invoiceXml(text)        hoá đơn điện tử XML (chuẩn TT78) → { rows, meta: { no, date } }
+   PoParsers.invoiceMeta(text)       số + ngày hoá đơn từ chữ của hoá đơn PDF → { no, date }
    PoParsers.receiptSheet(aoa)       mở lại "Phiếu đề nghị nhập kho" đã xuất → { lots, items }
    PoParsers.misaSheet(aoa)          mở lại file nhập đơn mua hàng MISA đã xuất → { lots, items, supplier, poDate }
    PoParsers.catalogSheet(aoa)       danh mục hàng (Danh sách hàng hoá MISA, list sản phẩm NCC…) → [{ code, name, cbm, price }]
@@ -200,6 +201,19 @@
     return d.length >= 6 && /\p{L}{3,}/u.test(d) ? d : '';
   }
 
+  /* Số hoá đơn + ngày hoá đơn từ chữ của hoá đơn PDF
+     - kiểu "00013732 / 19.10.2026" (số HĐ 7–8 chữ số / ngày)
+     - kiểu "Số (No.): 0000123" + "Ngày 19 tháng 10 năm 2026" */
+  function invoiceMeta(text) {
+    const t = String(text || '');
+    let no = '', d = '';
+    let m = t.match(/(?:^|[^\d])(\d{7,8})\s*\/\s*(\d{1,2}[./-]\d{1,2}[./-]\d{4})/);
+    if (m) { no = m[1]; d = date(m[2]); }
+    if (!no) { m = t.match(/S[ốo]\s*(?:hóa đơn|hoá đơn|HĐ)?\s*(?:\((?:Invoice\s*)?No\.?\))?\s*[:：]\s*(\d{3,8})\b/i); if (m) no = m[1]; }
+    if (!d) { m = t.match(/Ngày\s*(?:\(date\))?\s*(\d{1,2})\s*tháng\s*(?:\(month\))?\s*(\d{1,2})\s*năm\s*(?:\(year\))?\s*(\d{4})/i); if (m) d = iso(+m[3], +m[2], +m[1]); }
+    return { no, date: d };
+  }
+
   /* ---------- Hoá đơn XML (TT78): mỗi <HHDVu> là 1 dòng ---------- */
   function invoiceXml(text) {
     const doc = new DOMParser().parseFromString(text, 'text/xml');
@@ -212,7 +226,8 @@
       if (!model || !(qty > 0)) return;
       rows.push({ model, desc: name, qty, price, delivered: NaN, unconfirmed: NaN, date: '', vat: parseFloat(get(el, 'TSuat')) });
     });
-    return { rows };
+    const root0 = doc.documentElement;
+    return { rows, meta: { no: get(root0, 'SHDon'), date: date(get(root0, 'NLap')) } };
   }
 
   /* ---------- Mở lại Phiếu đề nghị nhập kho (.xlsx) ----------
@@ -301,7 +316,7 @@
     return [];
   }
 
-  const api = { num, date, looksModel, pickModel, paste, table, pdfLines, invoiceXml, receiptSheet, misaSheet, catalogSheet, MISA_HEAD, findTriple };
+  const api = { num, date, looksModel, pickModel, paste, table, invoiceMeta, pdfLines, invoiceXml, receiptSheet, misaSheet, catalogSheet, MISA_HEAD, findTriple };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PoParsers = api;
 })(typeof window !== 'undefined' ? window : globalThis);

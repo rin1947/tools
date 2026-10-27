@@ -138,36 +138,46 @@
   /* Dòng kiểu PO (mã, SL, giá): thêm/cập nhật; hàng mới mặc định vào đợt 1 nếu chỉ có 1 đợt */
   /* source: 'po' (PO scan / bảng PO) → SL PO + giá PO · 'invoice' (hoá đơn) → ghi nhận SL & giá hoá đơn để đối chiếu,
      chỉ lấy SL / giá hoá đơn khi dòng chưa có SL / giá. docKey = tên file (nạp lại cùng file không bị cộng trùng) */
-  function applyPoRows(rows, source, docKey) {
-    ensureLot();
-    let add = 0, upd = 0; const notInPo = [];
-    const poHasItems = st.items.some((x) => n0(parseNum(x.qty)) > 0);
+  /* Dòng PO (PO scan / Excel / dán bảng): SL PO + đơn giá PO. Không tự chia đợt — việc chia đợt làm ở mục 2. */
+  function applyPoRows(rows, source) {
+    let add = 0, upd = 0;
     rows.forEach((r) => {
       const existed = st.items.some((x) => x.model === up(r.model));
-      if (source === 'invoice' && !existed && poHasItems) { notInPo.push(`${up(r.model)} (SL ${r.qty})`); return; }   // hàng trên HĐ không có trong PO
       const it = itemFor(r.model, r.desc);
-      if (source === 'invoice') {
-        it.invs = { ...(it.invs || {}) };
-        it.invs[docKey || 'HĐ'] = { qty: r.qty, price: r.price };
-        if (isFinite(r.vat)) it.vat = r.vat;
-        if (!String(it.name || '').trim() && r.desc) it.name = String(r.desc).replace(/\s*\([^()]*\)\s*$/, '').trim();
-        if (existed && n0(parseNum(it.qty)) > 0) {                      // dòng đã có SL PO: không đổi SL / giá, chỉ đối chiếu
-          if (!(parseNum(it.price) > 0) && r.price > 0) { it.price = r.price; it.priceFrom = 'invoice'; }
-          upd++; return;
-        }
-      }
-      if (isFinite(r.qty)) {
-        const oldQty = n0(parseNum(it.qty));
-        it.qty = r.qty;
-        // chỉ có 1 đợt: hàng mới, hàng chưa xếp đợt nào, hoặc đang xếp đủ SL cũ → xếp đủ SL mới vào đợt đó
-        if (st.lots.length === 1 && (!existed || assigned(it) === 0 || assigned(it) === oldQty)) it.split = { [st.lots[0].id]: r.qty };
-      }
-      if (isFinite(r.price) && r.price > 0) { it.price = r.price; it.priceFrom = source; if (source !== 'invoice') it.poPrice = r.price; }
+      if (isFinite(r.qty)) it.qty = r.qty;
+      if (isFinite(r.price) && r.price > 0) { it.price = r.price; it.priceFrom = source; it.poPrice = r.price; }
       if (isFinite(r.vat)) it.vat = r.vat;
       if (!String(it.name || '').trim() && r.desc) it.name = String(r.desc).replace(/\s*\([^()]*\)\s*$/, '').trim();
       existed ? upd++ : add++;
     });
-    return { add, upd, notInPo };
+    return { add, upd, notInPo: [] };
+  }
+  /* Hoá đơn của 1 đợt giao: SL từng mã trên hoá đơn = SL của đợt đó; ghi giá hoá đơn để so với giá PO.
+     lot = null → tạo đợt mới (hoặc dùng lại đợt đã gắn đúng số hoá đơn này). docKey = tên file.
+     PO chưa có dòng nào → lấy luôn hoá đơn làm dòng hàng (SL PO = SL hoá đơn). */
+  function applyInvoice(rows, lot, docKey, meta = {}) {
+    const notInPo = []; let n = 0;
+    const poHasItems = st.items.some((x) => n0(parseNum(x.qty)) > 0);
+    if (!lot && meta.no) lot = st.lots.find((l) => l.inv && l.inv === meta.no) || null;
+    if (!lot) { lot = { id: uid(), name: '', date: '', note: '', cont: '' }; st.lots.push(lot); }
+    if (meta.no) lot.inv = meta.no;
+    if (meta.date) lot.invDate = meta.date;
+    rows.forEach((r) => {
+      const m = up(r.model);
+      let it = st.items.find((x) => x.model === m);
+      if (!it && poHasItems) { notInPo.push(`${m} (SL ${r.qty})`); return; }
+      if (!it) { it = itemFor(m, r.desc); it.qty = 0; }
+      it.invs = { ...(it.invs || {}) };
+      it.invs[docKey] = { qty: r.qty, price: r.price, lot: lot.id };
+      // SL đợt = tổng SL các hoá đơn gắn với đợt này
+      it.split = { ...it.split, [lot.id]: invList(it).filter(([, v]) => v.lot === lot.id).reduce((a, [, v]) => a + n0(v.qty), 0) };
+      if (!poHasItems) it.qty = n0(parseNum(it.qty)) + n0(r.qty);
+      if ((!(parseNum(it.price) > 0) || it.priceFrom === 'cat') && r.price > 0) { it.price = r.price; it.priceFrom = 'invoice'; }
+      if (isFinite(r.vat)) it.vat = r.vat;
+      if (!String(it.name || '').trim() && r.desc) it.name = String(r.desc).replace(/\s*\([^()]*\)\s*$/, '').trim();
+      n++;
+    });
+    return { lot, n, notInPo };
   }
   const invList = (it) => Object.entries(it.invs || {});
   const invQty = (it) => invList(it).reduce((a, [, v]) => a + n0(v.qty), 0);
@@ -218,19 +228,21 @@
       <tr data-lot="${l.id}">
         <td class="center"><b>${i + 1}</b></td>
         <td><input class="w-lg" data-lk="name" value="${esc(l.name)}" placeholder="${esc(autoName(i))}"></td>
+        <td class="inv-cell">${l.inv ? `<b>${esc(l.inv)}</b>${l.invDate ? `<br><span class="muted">${vnDate(l.invDate)}</span>` : ''}` : '<span class="muted">—</span>'}
+          <button class="btn btn-ghost btn-sm no-print" data-inv-lot="${l.id}" title="Nạp hoá đơn cho đợt này">📄</button></td>
         <td><input type="date" data-lk="date" value="${esc(l.date)}"></td>
         <td><input class="w-lg" data-lk="note" value="${esc(l.note)}" placeholder="vd Chờ giao chéo kho"></td>
         <td><input class="w-sm" data-lk="cont" value="${esc(l.cont)}" placeholder="vd 1x40"></td>
         <td class="num" data-out="lq${i}">${fmt.num(t.lots[i].qty, 0)}</td>
         <td class="num" data-out="lc${i}">${fmt.num(t.lots[i].cbm, 2)}</td>
         <td><button class="btn-x" data-del-lot="${l.id}" title="Xoá đợt">✕</button></td>
-      </tr>`).join('') || `<tr><td colspan="8" class="muted">Chưa có đợt — dán bảng hoặc bấm ＋ Thêm đợt.</td></tr>`;
+      </tr>`).join('') || `<tr><td colspan="9" class="muted">Chưa có đợt — nạp hoá đơn, lịch giao hoặc bấm ＋ Thêm đợt.</td></tr>`;
   }
 
   function renderItems() {
-    const lotHeads = st.lots.map((l, i) => `<th class="num lot-col" title="${esc(lotName(l, i))}">Đợt ${i + 1}</th>`).join('');
     $('itemHead').innerHTML = `<tr><th>#</th><th>Model</th><th>Mã hàng MISA</th><th>Tên hàng</th><th>ĐVT</th><th class="num">SL PO</th>
-      <th class="num">Đơn giá</th><th class="num">Giá HĐ <span class="hint" tabindex="0" data-tip="Đơn giá trên hoá đơn đã nạp, để so với đơn giá PO. Đỏ = lệch giá.">?</span></th><th class="num">Thành tiền</th><th class="num">Số khối</th><th class="num">VAT %</th>${lotHeads}<th class="num">Còn lại</th><th></th></tr>`;
+      <th class="num">Đơn giá PO</th><th class="num">Thành tiền</th><th class="num">Số khối</th><th class="num">VAT %</th>
+      <th class="num">Đã chia đợt</th><th class="num">Còn lại</th><th></th></tr>`;
     $('itemBody').innerHTML = st.items.map((it, k) => {
       const unknown = !catFind(it.model);
       return `<tr data-id="${it.id}" class="${unknown ? 'unknown' : ''}">
@@ -241,33 +253,58 @@
         <td><input class="w-xs" data-k="unit" value="${esc(it.unit)}"></td>
         <td><input class="w-xs in-num" data-k="qty" inputmode="decimal" value="${esc(it.qty)}"></td>
         <td><input class="w-sm in-num" data-k="price" inputmode="decimal" value="${it.price === '' ? '' : esc(fmt.vnd(parseNum(it.price)))}" title="${it.priceFrom === 'cat' ? 'Giá gần nhất trong danh mục — kiểm tra lại với PO' : ''}">${it.priceFrom === 'cat' ? '<span class="tag">giá cũ</span>' : ''}</td>
-        <td class="num" data-out="inv"></td>
-        <td class="num" data-out="amt">${fmt.vnd(n0(parseNum(it.qty)) * n0(parseNum(it.price)))}</td>
+        <td class="num" data-out="amt"></td>
         <td><input class="w-xs in-num" data-k="cbm" inputmode="decimal" value="${esc(it.cbm)}"></td>
         <td><input class="w-xs in-num" data-k="vat" inputmode="decimal" value="${esc(it.vat)}" placeholder="${S.vat}"></td>
-        ${st.lots.map((l) => `<td class="lot-col"><input class="w-xs in-num" data-lot="${l.id}" inputmode="decimal" value="${esc(it.split[l.id] ?? '')}"></td>`).join('')}
+        <td class="num" data-out="asg"></td>
         <td class="num rest" data-out="rest"></td>
         <td><button class="btn-x" data-del-item="${it.id}" title="Xoá dòng">✕</button></td>
       </tr>`;
-    }).join('') || `<tr><td colspan="${13 + st.lots.length}" class="muted">Chưa có dòng hàng.</td></tr>`;
+    }).join('') || `<tr><td colspan="13" class="muted">Chưa có dòng hàng — nạp PO scan, Excel PO hoặc dán bảng.</td></tr>`;
+    renderSplit();
+  }
+
+  /* Bảng SL từng đợt (mục 2): mỗi mã 1 dòng, mỗi đợt 1 cột; kèm giá PO / giá hoá đơn để so */
+  function renderSplit() {
+    const lotHeads = st.lots.map((l, i) => `<th class="num lot-col" title="${esc(lotName(l, i))}">Đợt ${i + 1}${l.inv ? `<br><small>HĐ ${esc(l.inv)}</small>` : ''}</th>`).join('');
+    $('splitHead').innerHTML = `<tr><th>Model</th><th>Tên hàng</th><th class="num">SL PO</th>${lotHeads}<th class="num">Còn lại</th>
+      <th class="num">Giá PO</th><th class="num">Giá HĐ <span class="hint" tabindex="0" data-tip="Đơn giá trên các hoá đơn đã nạp. Xanh = khớp giá PO, đỏ = lệch.">?</span></th></tr>`;
+    $('splitBody').innerHTML = st.items.map((it) => `<tr data-sid="${it.id}">
+        <td><b>${esc(it.model)}</b></td><td class="muted name-cell">${esc(it.name)}</td>
+        <td class="num" data-out="sq"></td>
+        ${st.lots.map((l) => `<td class="lot-col"><input class="w-xs in-num" data-lot="${l.id}" inputmode="decimal" value="${esc(it.split[l.id] ?? '')}"></td>`).join('')}
+        <td class="num rest" data-out="rest"></td>
+        <td class="num" data-out="pp"></td><td class="num" data-out="inv"></td>
+      </tr>`).join('') || `<tr><td colspan="${6 + st.lots.length}" class="muted">Chưa có dòng hàng ở PO tổng.</td></tr>`;
   }
 
   function renderDerived() {
     const t = totals();
     st.items.forEach((it) => {
+      const r = rest(it);
       const tr = document.querySelector(`#itemBody tr[data-id="${it.id}"]`);
-      if (!tr) return;
-      tr.querySelector('[data-out="amt"]').textContent = fmt.vnd(n0(parseNum(it.qty)) * n0(parseNum(it.price)));
-      const ip = invPrices(it); const ic = tr.querySelector('[data-out="inv"]');
-      ic.textContent = ip.map((p) => fmt.vnd(p)).join(' / ');
-      ic.className = 'num ' + (ip.length ? (ip.every((p) => Math.abs(p - parseNum(it.price)) < 0.5) ? 'match' : 'mismatch') : '');
-      ic.title = invList(it).map(([k, v]) => `${k}: SL ${v.qty} × ${fmt.vnd(v.price)}`).join('\n');
-      const r = rest(it); const c = tr.querySelector('[data-out="rest"]');
-      c.textContent = fmt.num(r, 0); c.className = 'num rest ' + (r === 0 ? 'ok' : 'bad');
+      if (tr) {
+        tr.querySelector('[data-out="amt"]').textContent = fmt.vnd(n0(parseNum(it.qty)) * n0(parseNum(it.price)));
+        tr.querySelector('[data-out="asg"]').textContent = fmt.num(assigned(it), 0);
+        const c = tr.querySelector('[data-out="rest"]'); c.textContent = fmt.num(r, 0); c.className = 'num rest ' + (r === 0 ? 'ok' : 'bad');
+      }
+      const sr = document.querySelector(`#splitBody tr[data-sid="${it.id}"]`);
+      if (sr) {
+        sr.querySelector('[data-out="sq"]').textContent = fmt.num(n0(parseNum(it.qty)), 0);
+        const c = sr.querySelector('[data-out="rest"]'); c.textContent = fmt.num(r, 0); c.className = 'num rest ' + (r === 0 ? 'ok' : 'bad');
+        sr.querySelector('[data-out="pp"]').textContent = parseNum(it.price) > 0 ? fmt.vnd(parseNum(it.price)) : '';
+        const ip = invPrices(it); const ic = sr.querySelector('[data-out="inv"]');
+        ic.textContent = ip.map((p) => fmt.vnd(p)).join(' / ');
+        ic.className = 'num ' + (ip.length ? (ip.every((p) => Math.abs(p - parseNum(it.price)) < 0.5) ? 'match' : 'mismatch') : '');
+        ic.title = invList(it).map(([k, v]) => `${k}: SL ${v.qty} × ${fmt.vnd(v.price)}`).join('\n');
+      }
     });
-    $('itemFoot').innerHTML = st.items.length ? `<tr><td colspan="5">Tổng</td><td class="num">${fmt.num(t.qty, 0)}</td><td></td><td></td>
+    const asg = t.lots.reduce((s, l) => s + l.qty, 0);
+    $('itemFoot').innerHTML = st.items.length ? `<tr><td colspan="5">Tổng</td><td class="num">${fmt.num(t.qty, 0)}</td><td></td>
       <td class="num">${fmt.vnd(t.amount)}</td><td class="num">${fmt.num(t.cbm, 2)}</td><td></td>
-      ${t.lots.map((l) => `<td class="num">${fmt.num(l.qty, 0)}</td>`).join('')}<td class="num">${fmt.num(t.qty - t.lots.reduce((s, l) => s + l.qty, 0), 0)}</td><td></td></tr>` : '';
+      <td class="num">${fmt.num(asg, 0)}</td><td class="num">${fmt.num(t.qty - asg, 0)}</td><td></td></tr>` : '';
+    $('splitFoot').innerHTML = st.items.length ? `<tr><td colspan="2">Tổng</td><td class="num">${fmt.num(t.qty, 0)}</td>
+      ${t.lots.map((l) => `<td class="num">${fmt.num(l.qty, 0)}</td>`).join('')}<td class="num">${fmt.num(t.qty - asg, 0)}</td><td></td><td></td></tr>` : '';
     t.lots.forEach((l, i) => {
       const a = document.querySelector(`[data-out="lq${i}"]`); if (a) a.textContent = fmt.num(l.qty, 0);
       const b = document.querySelector(`[data-out="lc${i}"]`); if (b) b.textContent = fmt.num(l.cbm, 2);
@@ -349,11 +386,11 @@
   /* ======================= SỰ KIỆN: PO ======================= */
   ['poNo', 'poDate', 'poTotal'].forEach((id) => $(id).addEventListener('input', () => {
     st[id] = $(id).value.trim();
-    if (id === 'poNo') { renderLots(totals()); renderItems(); }
+    if (id === 'poNo') { renderLots(totals()); renderSplit(); }
     renderDerived();
   }));
   $('poSupplier').onchange = () => { st.supplier = $('poSupplier').value; renderDerived(); };
-  $('poWh').onchange = () => { st.wh = $('poWh').value; renderLots(totals()); renderItems(); renderDerived(); };
+  $('poWh').onchange = () => { st.wh = $('poWh').value; renderLots(totals()); renderSplit(); renderDerived(); };
   $('misaMode').onchange = () => { st.misaMode = $('misaMode').value; save(); };
 
   /* Đợt */
@@ -361,10 +398,13 @@
     const tr = e.target.closest('tr[data-lot]'); const k = e.target.dataset.lk;
     if (!tr || !k) return;
     const lot = st.lots.find((l) => l.id === tr.dataset.lot); lot[k] = e.target.value;
-    if (k === 'name') renderItems();
+    if (k === 'name') renderSplit();
     renderDerived();
   });
+  let invTargetLot = null;
   $('lotBody').addEventListener('click', (e) => {
+    const il = e.target.closest('[data-inv-lot]');
+    if (il) { invTargetLot = il.dataset.invLot; $('fileLotInvoice').click(); return; }
     const id = e.target.dataset.delLot; if (!id) return;
     const has = st.items.some((it) => n0(parseNum(it.split[id])) > 0);
     if (has && !confirm('Đợt này đang có hàng. Xoá đợt thì số lượng của đợt sẽ trả về cột "Còn lại". Xoá?')) return;
@@ -384,11 +424,14 @@
   $('itemBody').addEventListener('input', (e) => {
     const tr = e.target.closest('tr[data-id]'); if (!tr) return;
     const it = st.items.find((x) => x.id === tr.dataset.id);
-    if (e.target.dataset.lot) { it.split[e.target.dataset.lot] = e.target.value.trim(); }
-    else {
-      const k = e.target.dataset.k; it[k] = e.target.value;
-      if (k === 'price') it.priceFrom = 'manual';
-    }
+    const k = e.target.dataset.k; it[k] = e.target.value;
+    if (k === 'price') it.priceFrom = 'manual';
+    renderDerived();
+  });
+  $('splitBody').addEventListener('input', (e) => {
+    const tr = e.target.closest('tr[data-sid]'); if (!tr || !e.target.dataset.lot) return;
+    const it = st.items.find((x) => x.id === tr.dataset.sid);
+    it.split[e.target.dataset.lot] = e.target.value.trim();
     renderDerived();
   });
   $('itemBody').addEventListener('change', (e) => {
@@ -400,18 +443,25 @@
       else if (!it.code || it.code === S.prefix) it.code = codeOf(it.model);
     }
     if (k === 'price') { it.price = parseNum(it.price) || ''; e.target.value = it.price === '' ? '' : fmt.vnd(it.price); const tag = e.target.nextElementSibling; if (tag) tag.remove(); }
-    if (k === 'model') { renderItems(); renderLots(totals()); }   // chỉ vẽ lại khi đổi model (giữ con trỏ khi Tab qua các ô khác)
+    if (k === 'model' || k === 'name') { renderItems(); renderLots(totals()); }   // chỉ vẽ lại khi đổi model (giữ con trỏ khi Tab qua các ô khác)
     renderDerived();
   });
   $('itemBody').addEventListener('click', (e) => {
     const id = e.target.dataset.delItem; if (!id) return;
     st.items = st.items.filter((x) => x.id !== id); renderAll();
   });
-  $('btnAddItem').onclick = () => { ensureLot(); const it = newItem(''); st.items.push(it); renderAll(); document.querySelector(`tr[data-id="${it.id}"] input`).focus(); };
+  $('btnAddItem').onclick = () => { const it = newItem(''); st.items.push(it); renderAll(); document.querySelector(`tr[data-id="${it.id}"] input`).focus(); };
 
   /* ======================= DÁN BẢNG ======================= */
   const log = (html, ok) => { $('importLog').insertAdjacentHTML('afterbegin', `<div class="log-row ${ok ? 'ok' : ''}">${html}</div>`); };
-  $('btnPaste').onclick = () => { $('pasteBox').hidden = false; $('pasteText').focus(); };
+  function openPaste(kind) {
+    $('pasteHelp').innerHTML = kind === 'po'
+      ? '📋 <b>Dán bảng PO</b>: copy từ Excel các cột mã (Model), số lượng, đơn giá rồi dán vào đây.'
+      : '📋 <b>Dán lịch giao</b>: copy bảng trong email NCC (Material, Order Quantity, Cumulative Deliv. Qty, Delivery date) rồi dán vào đây — phần đã giao xếp vào đợt theo ngày giao, phần chưa giao để ở "Còn lại".';
+    $('pasteBox').hidden = false; $('pasteText').focus(); $('pasteBox').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  $('btnPaste').onclick = () => openPaste('po');
+  $('btnPasteDelivery').onclick = () => openPaste('delivery');
   $('btnCancelPaste').onclick = () => { $('pasteBox').hidden = true; };
   /* Áp bảng đã đọc (dán hoặc file Excel) vào PO: lịch giao → chia đợt; bảng PO → SL, đơn giá */
   function applyParsed(res, label) {
@@ -526,7 +576,7 @@
     if (res.poDate) st.poDate = res.poDate;
     const sum = res.rows.reduce((a, r) => a + n0(r.qty) * n0(r.price), 0);
     if (res.total > 0) st.poTotal = String(res.total);
-    const r = applyPoRows(res.rows.filter((x) => x.model), 'po', f.name);
+    const r = applyPoRows(res.rows.filter((x) => x.model), 'po');
     const fixed = res.rows.filter((x) => x.fixed).map((x) => (x.raw !== x.model ? `${x.raw}→${x.model}` : x.model) + (x.note ? ` (${x.note})` : ''));
     const bad = res.rows.filter((x) => !x.ok || x.unknown).map((x) => `${x.model || x.raw}: ${x.unknown ? 'mã lạ, không có trong danh mục' : x.note}`);
     const totOk = res.total > 0 && Math.abs(sum - res.total) < 1;
@@ -535,24 +585,52 @@
       + (fixed.length ? `<br>🔧 Tool đã tự sửa: ${esc(fixed.join('; '))}` : '')
       + (bad.length ? `<br>⚠️ Cần xem lại: ${esc(bad.join('; '))}` : ''), totOk && !bad.length);
   }
+  /* Đọc 1 file hoá đơn (PDF có chữ / XML) → { rows, meta: { no, date } } ; PDF không có chữ → null */
+  async function readInvoice(f) {
+    if (/\.xml$/i.test(f.name)) { const x = P.invoiceXml(await f.text()); return { rows: x.rows, meta: x.meta || {}, warnings: [] }; }
+    const lines = await pdfToLines(f);
+    if (lines.length < 5) return null;
+    const text = lines.map((l) => l.toks.map((t) => t.s).join(' ')).join('\n');
+    const res = P.pdfLines(lines, known);
+    return { rows: res.rows, meta: P.invoiceMeta(text), warnings: res.warnings || [], text };
+  }
+  async function importInvoices(files, lotId) {
+    for (const f of files) {
+      try {
+        const inv = await readInvoice(f);
+        if (!inv) { log(`📄 ${esc(f.name)}: PDF dạng ảnh scan — hoá đơn cần bản PDF có chữ (tải từ trang tra cứu hoá đơn) hoặc file XML.`); continue; }
+        if (!inv.rows.length) { log(`📄 ${esc(f.name)}: không tìm thấy dòng hàng (SL × đơn giá = thành tiền).`); continue; }
+        const target = lotId ? st.lots.find((l) => l.id === lotId) : null;
+        const r = applyInvoice(inv.rows, target, f.name, inv.meta);
+        const i = st.lots.indexOf(r.lot);
+        const bad = inv.rows.map((x) => { const it = st.items.find((y) => y.model === up(x.model)); return it && parseNum(it.price) > 0 && Math.abs(x.price - parseNum(it.price)) >= 0.5 ? `${x.model}: HĐ ${fmt.vnd(x.price)} ≠ PO ${fmt.vnd(parseNum(it.price))}` : null; }).filter(Boolean);
+        log(`📄 ${esc(f.name)} → <b>Đợt ${i + 1}</b>${inv.meta.no ? ` (HĐ ${esc(inv.meta.no)}${inv.meta.date ? ' ngày ' + vnDate(inv.meta.date) : ''})` : ''}: ${r.n} mã, SL ${fmt.num(inv.rows.reduce((a, x) => a + n0(x.qty), 0), 0)}. `
+          + (bad.length ? `<br>⛔ Lệch giá: ${esc(bad.join('; '))}` : (r.n ? 'Giá khớp PO ✓' : ''))
+          + (r.notInPo.length ? `<br>⚠️ Hàng trên hoá đơn KHÔNG có trong PO (không thêm vào): ${esc(r.notInPo.join('; '))}` : '')
+          + (inv.warnings.length ? `<br>⚠️ ${esc(inv.warnings.join('; '))}` : ''), !bad.length && !r.notInPo.length);
+      } catch (err) { log(`📄 ${esc(f.name)}: lỗi — ${esc(err.message)}`); }
+    }
+    renderAll();
+  }
+  $('fileInvoice').onchange = async (e) => { await importInvoices([...e.target.files], null); e.target.value = ''; };
+  $('fileLotInvoice').onchange = async (e) => { await importInvoices([...e.target.files], invTargetLot); invTargetLot = null; e.target.value = ''; };
+
+  /* PO tổng: bản scan → OCR; PDF có chữ → đọc bảng (nếu thực ra là hoá đơn thì chuyển sang mục 2) */
   $('fileDoc').onchange = async (e) => {
     for (const f of e.target.files) {
       try {
         if (/\.(png|jpe?g|webp|bmp)$/i.test(f.name)) { await importScan(f); continue; }
-        let res, kind = 'invoice';
-        if (/\.xml$/i.test(f.name)) res = P.invoiceXml(await f.text());
-        else {
-          const lines = await pdfToLines(f);
-          if (lines.length < 5) { await importScan(f); continue; }        // PDF ảnh scan → đọc bằng OCR
-          const text = lines.map((l) => l.toks.map((t) => t.s).join(' ')).join(' ');
-          kind = /PURCHASE\s*ORDER|ĐƠN\s*ĐẶT\s*HÀNG/i.test(text) && !/HÓA\s*ĐƠN|HOÁ\s*ĐƠN|INVOICE/i.test(text) ? 'po' : 'invoice';
-          res = P.pdfLines(lines, known);
+        const lines = await pdfToLines(f);
+        if (lines.length < 5) { await importScan(f); continue; }          // PDF ảnh scan → đọc bằng OCR
+        const text = lines.map((l) => l.toks.map((t) => t.s).join(' ')).join(' ');
+        if (/HÓA\s*ĐƠN|HOÁ\s*ĐƠN|INVOICE/i.test(text) && !/PURCHASE\s*ORDER/i.test(text)) {
+          log(`📄 ${esc(f.name)}: đây là hoá đơn → đã nạp vào mục 2 (đợt giao).`);
+          await importInvoices([f], null); continue;
         }
+        const res = P.pdfLines(lines, known);
         if (!res.rows.length) { log(`📄 ${esc(f.name)}: không tìm thấy dòng hàng (SL × đơn giá = thành tiền).`); continue; }
-        const r = applyPoRows(res.rows, kind, f.name);
-        log(`📄 ${esc(f.name)} (${kind === 'po' ? 'PO' : 'hoá đơn'}): ${res.rows.length} dòng — ${r.add} mã mới, ${r.upd} ${kind === 'po' ? 'cập nhật SL / đơn giá' : 'đối chiếu với PO'}.`
-          + `${(res.warnings || []).length ? ' ⚠️ ' + esc(res.warnings.join('; ')) : ''}`
-          + (r.notInPo.length ? `<br>⚠️ Hàng trên hoá đơn KHÔNG có trong PO (không thêm vào): ${esc(r.notInPo.join('; '))}` : ''), !r.notInPo.length);
+        const r = applyPoRows(res.rows, 'po');
+        log(`📄 ${esc(f.name)} (PO): ${res.rows.length} dòng — ${r.add} mã mới, ${r.upd} cập nhật SL / đơn giá.`, true);
       } catch (err) { log(`📄 ${esc(f.name)}: lỗi — ${esc(err.message)}`); }
     }
     e.target.value = ''; renderAll();
@@ -639,7 +717,7 @@
   };
 
   /* Nạp file Excel bất kỳ: phiếu nhập kho / file MISA cũ → mở lại; bảng PO / lịch giao → thêm vào PO đang làm */
-  $('fileExcel').onchange = async (e) => {
+  async function importExcel(e) {
     for (const f of e.target.files) {
       try {
         const sheets = await readAoa(f);
@@ -650,13 +728,15 @@
           const r = P.receiptSheet(sh.aoa);
           if (r && r.items.length) { mergeFile('receipt', r); log(`📥 ${esc(f.name)}: là phiếu nhập kho → đã mở lại (${r.items.length} dòng).`, true); done = true; break; }
           const t = P.table(sh.aoa, known);
-          if (t.rows.length) { ensureLot(); applyParsed(t, `📥 ${esc(f.name)}${sheets.length > 1 ? ` (sheet ${esc(sh.name)})` : ''}`); done = true; break; }
+          if (t.rows.length) { applyParsed(t, `📥 ${esc(f.name)}${sheets.length > 1 ? ` (sheet ${esc(sh.name)})` : ''}`); done = true; break; }
         }
         if (!done) log(`📥 ${esc(f.name)}: không tìm thấy cột Model + Số lượng. Xem file mẫu để đặt tên cột.`);
       } catch (err) { log(`📥 ${esc(f.name)}: lỗi — ${esc(err.message)}`); }
     }
     e.target.value = ''; renderAll();
-  };
+  }
+  $('fileExcel').onchange = importExcel;
+  $('fileDelivery').onchange = importExcel;
 
   /* ======================= XUẤT FILE ======================= */
   const safe = (s) => String(s || 'PO').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_');

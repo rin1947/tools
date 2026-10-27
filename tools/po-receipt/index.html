@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Phiếu nhập kho &amp; File MISA</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
-  <link rel="stylesheet" href="../../assets/theme.css?v=20261027g">
-  <link rel="stylesheet" href="style.css?v=20261027g">
+  <link rel="stylesheet" href="../../assets/theme.css?v=20261027i">
+  <link rel="stylesheet" href="style.css?v=20261027i">
 </head>
 <body>
   <main class="page">
@@ -15,7 +15,7 @@
       <section class="hero no-print">
         <div style="font-size:56px">📦</div>
         <div>
-          <h1>Phiếu nhập kho &amp; File MISA <span class="badge live">bản 27/10 · 5</span></h1>
+          <h1>Phiếu nhập kho &amp; File MISA <span class="badge live">bản 27/10 · 6</span></h1>
           <p>Từ PO và lịch giao của nhà cung cấp → chia đợt giao → xuất <b>Phiếu đề nghị nhập kho</b> (.xlsx) và <b>file nhập đơn mua hàng MISA</b> (.xls), số đơn hàng khớp với tên lô trên phiếu.</p>
         </div>
         <span id="bamboo"></span>
@@ -114,15 +114,26 @@
         </div>
       </section>
 
-      <!-- ===================== 1. THÔNG TIN PO ===================== -->
+      <div class="import-log no-print" id="importLog"></div>
+
+      <div class="paste-box no-print" id="pasteBox" hidden>
+        <p class="help-text" id="pasteHelp"></p>
+        <textarea id="pasteText" rows="6" placeholder="Dán bảng vào đây (Ctrl + V)…"></textarea>
+        <div class="toolbar">
+          <button class="btn btn-primary btn-sm" id="btnReadPaste">✅ Đọc bảng</button>
+          <button class="btn btn-ghost btn-sm" id="btnCancelPaste">Đóng</button>
+        </div>
+      </div>
+
+      <!-- ===================== 1. PO TỔNG ===================== -->
       <section class="card">
-        <h2 class="section-title"><span class="num">1</span> Thông tin PO</h2>
+        <h2 class="section-title"><span class="num">1</span> PO tổng</h2>
         <div class="form-grid">
           <div class="field"><label>Số PO</label><input id="poNo" placeholder="vd PO-0001"></div>
           <div class="field"><label>Ngày đơn hàng</label><input id="poDate" type="date"></div>
           <div class="field"><label>Nhà cung cấp</label><select id="poSupplier"></select></div>
           <div class="field"><label>Kho nhận</label><select id="poWh"></select></div>
-          <div class="field"><label>Tổng tiền PO trước VAT <span class="hint" tabindex="0" data-tip="Không bắt buộc. Nhập số trên PO để tool so với tổng tiền hàng bên dưới.">?</span></label><input id="poTotal" inputmode="decimal" placeholder="để đối chiếu"></div>
+          <div class="field"><label>Tổng tiền PO trước VAT <span class="hint" tabindex="0" data-tip="Tự điền khi nạp PO scan. Tool so với tổng tiền các dòng bên dưới.">?</span></label><input id="poTotal" inputmode="decimal" placeholder="để đối chiếu"></div>
           <div class="field"><label>File MISA</label>
             <select id="misaMode">
               <option value="lot">Mỗi đợt 1 số đơn (khớp tên lô)</option>
@@ -130,54 +141,61 @@
             </select>
           </div>
         </div>
-      </section>
-
-      <!-- ===================== 2. HÀNG HOÁ ===================== -->
-      <section class="card">
-        <h2 class="section-title"><span class="num">2</span> Hàng hoá &amp; chia đợt</h2>
-        <div class="toolbar no-print">
-          <label class="btn btn-primary btn-sm file-btn">📥 Nạp Excel (PO / lịch giao)
+        <div class="toolbar no-print step-tools">
+          <label class="btn btn-primary btn-sm file-btn">📄 Nạp PO scan (PDF / ảnh)
+            <input type="file" id="fileDoc" accept=".pdf,.png,.jpg,.jpeg" multiple hidden>
+          </label>
+          <label class="btn btn-ghost btn-sm file-btn">📥 Nạp Excel PO
             <input type="file" id="fileExcel" accept=".xlsx,.xls,.csv" multiple hidden>
           </label>
-          <button class="btn btn-ghost btn-sm" id="btnPaste">📋 Dán bảng</button>
-          <label class="btn btn-ghost btn-sm file-btn">📄 Nạp PO scan / hoá đơn (PDF, ảnh, XML)
-            <input type="file" id="fileDoc" accept=".pdf,.xml,.png,.jpg,.jpeg" multiple hidden>
-          </label>
+          <button class="btn btn-ghost btn-sm" id="btnPaste">📋 Dán bảng PO</button>
           <button class="btn btn-pink btn-sm" id="btnAddItem">＋ Thêm dòng</button>
-          <span style="flex:1"></span>
-          <button class="btn btn-ghost btn-sm" id="btnAddLot">＋ Thêm đợt</button>
-          <button class="btn btn-ghost btn-sm" id="btnRemainder">↳ Dồn phần còn lại vào đợt mới</button>
         </div>
-
-        <p class="help-text no-print">📥 File Excel cần 1 dòng tiêu đề có cột <b>Model</b> và <b>Số lượng</b>; thêm <b>Đơn giá</b> nếu có.
-          Có thêm cột <b>Đã giao</b> + <b>Ngày giao</b> thì tool chia đợt theo ngày giao. Tên cột tiếng Anh như email NCC (Material, Order Quantity, Cumulative Deliv. Qty, Delivery date) cũng đọc được.
-          <a class="link" href="Mau-Nhap-PO.xlsx" download>Tải file mẫu</a>. Nạp phiếu nhập kho / file MISA cũ vào đây cũng được (tool tự mở lại).</p>
-
-        <div class="paste-box no-print" id="pasteBox" hidden>
-          <p class="help-text">Copy bảng từ <b>email lịch giao</b> của NCC (có cột Material, Order Quantity, Cumulative Deliv. Qty, Delivery date) hoặc từ <b>Excel PO</b> (mã, số lượng, đơn giá) rồi dán vào đây.
-            Lịch giao: phần đã giao được xếp vào đợt theo ngày giao, phần chưa giao để ở cột <b>Còn lại</b>.</p>
-          <textarea id="pasteText" rows="6" placeholder="Dán bảng vào đây (Ctrl + V)…"></textarea>
-          <div class="toolbar">
-            <button class="btn btn-primary btn-sm" id="btnReadPaste">✅ Đọc bảng</button>
-            <button class="btn btn-ghost btn-sm" id="btnCancelPaste">Đóng</button>
-          </div>
-        </div>
-        <div class="import-log" id="importLog"></div>
-
-        <h3 class="sub-title">Các đợt giao</h3>
-        <div class="table-wrap">
-          <table class="edit-table">
-            <thead><tr><th>Đợt</th><th>Tên lô / Số đơn MISA</th><th>Ngày nhập kho dự kiến</th><th>Hoặc ghi chú <span class="hint" tabindex="0" data-tip="Có ghi chú thì phiếu in ghi chú thay cho ngày, vd: Chờ giao chéo kho ngày 05/11 đến. Ngày vẫn được dùng làm ngày giao hàng trong file MISA.">?</span></th><th>Container</th><th class="num">SL</th><th class="num">Số khối</th><th></th></tr></thead>
-            <tbody id="lotBody"></tbody>
-          </table>
-        </div>
-
-        <h3 class="sub-title">Dòng hàng</h3>
+        <p class="help-text no-print">PO bản scan: tool tự đọc chữ (ngay trên máy), kiểm tra SL × đơn giá = thành tiền và tổng PO.
+          Excel PO cần cột <b>Model</b> + <b>Số lượng</b> (+ <b>Đơn giá</b>) — <a class="link" href="Mau-Nhap-PO.xlsx" download>tải file mẫu</a>.
+          Nạp phiếu nhập kho / file MISA cũ vào nút Excel cũng được (tool tự mở lại).</p>
         <div class="table-wrap">
           <table class="edit-table item-table">
             <thead id="itemHead"></thead>
             <tbody id="itemBody"></tbody>
             <tfoot id="itemFoot"></tfoot>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===================== 2. GIAO HÀNG & HOÁ ĐƠN ===================== -->
+      <section class="card">
+        <h2 class="section-title"><span class="num">2</span> Giao hàng &amp; hoá đơn theo từng đợt</h2>
+        <div class="toolbar no-print">
+          <label class="btn btn-primary btn-sm file-btn">📄 Nạp hoá đơn → đợt mới (PDF / XML)
+            <input type="file" id="fileInvoice" accept=".pdf,.xml" multiple hidden>
+          </label>
+          <label class="btn btn-ghost btn-sm file-btn">📥 Nạp lịch giao (Excel)
+            <input type="file" id="fileDelivery" accept=".xlsx,.xls,.csv" multiple hidden>
+          </label>
+          <button class="btn btn-ghost btn-sm" id="btnPasteDelivery">📋 Dán lịch giao (email NCC)</button>
+          <span style="flex:1"></span>
+          <button class="btn btn-ghost btn-sm" id="btnAddLot">＋ Thêm đợt</button>
+          <button class="btn btn-ghost btn-sm" id="btnRemainder">↳ Dồn phần còn lại vào đợt mới</button>
+          <input type="file" id="fileLotInvoice" accept=".pdf,.xml" multiple hidden>
+        </div>
+        <p class="help-text no-print">Mỗi lần NCC giao hàng: bấm <b>Nạp hoá đơn</b> → tool tạo 1 đợt, lấy SL từng mã theo hoá đơn và so đơn giá hoá đơn với giá PO.
+          Hoá đơn của đợt đã có thì bấm 📄 ở dòng đợt đó. Chưa có hoá đơn thì dùng lịch giao trong email NCC hoặc gõ SL từng đợt ở bảng dưới.</p>
+
+        <h3 class="sub-title">Các đợt giao</h3>
+        <div class="table-wrap">
+          <table class="edit-table">
+            <thead><tr><th>Đợt</th><th>Tên lô / Số đơn MISA</th><th>Hoá đơn</th><th>Ngày nhập kho dự kiến</th><th>Hoặc ghi chú <span class="hint" tabindex="0" data-tip="Có ghi chú thì phiếu in ghi chú thay cho ngày, vd: Chờ giao chéo kho ngày 05/11 đến. Ngày vẫn được dùng làm ngày giao hàng trong file MISA.">?</span></th><th>Container</th><th class="num">SL</th><th class="num">Số khối</th><th></th></tr></thead>
+            <tbody id="lotBody"></tbody>
+          </table>
+        </div>
+
+        <h3 class="sub-title">Số lượng từng đợt</h3>
+        <div class="table-wrap">
+          <table class="edit-table split-table">
+            <thead id="splitHead"></thead>
+            <tbody id="splitBody"></tbody>
+            <tfoot id="splitFoot"></tfoot>
           </table>
         </div>
       </section>
@@ -202,11 +220,11 @@
     </div>
   </main>
 
-  <script src="../../assets/common.js?v=20261027g"></script>
-  <script src="parsers.js?v=20261027g"></script>
-  <script src="export.js?v=20261027g"></script>
-  <script src="po-ocr.js?v=20261027g"></script>
-  <script src="xls-writer.js?v=20261027g"></script>
-  <script src="app.js?v=20261027g"></script>
+  <script src="../../assets/common.js?v=20261027i"></script>
+  <script src="parsers.js?v=20261027i"></script>
+  <script src="export.js?v=20261027i"></script>
+  <script src="po-ocr.js?v=20261027i"></script>
+  <script src="xls-writer.js?v=20261027i"></script>
+  <script src="app.js?v=20261027i"></script>
 </body>
 </html>

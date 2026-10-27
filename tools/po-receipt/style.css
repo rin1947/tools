@@ -58,3 +58,20 @@
 
 .item-table td.mismatch { color: var(--danger); font-weight: 900; }
 .item-table td.match { color: var(--accent); font-weight: 800; }
+
+/* ---------- Mục 2: SL từng đợt ---------- */
+.split-table th:first-child, .split-table td:first-child { position: sticky; left: 0; z-index: 2; background: var(--surface); box-shadow: 2px 0 0 var(--border); }
+.split-table th:first-child { background: var(--surface-2); z-index: 3; }
+.split-table th.lot-col, .split-table td.lot-col { background: var(--accent-bg); }
+.split-table th.lot-col { color: var(--accent); }
+.split-table th small { font-weight: 700; color: var(--text-mute); }
+.split-table td.name-cell { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+.split-table td.rest { font-weight: 900; }
+.split-table td.rest.ok { color: var(--accent); }
+.split-table td.rest.bad { color: var(--danger); }
+.split-table td.mismatch { color: var(--danger); font-weight: 900; }
+.split-table td.match { color: var(--accent); font-weight: 800; }
+.inv-cell { white-space: nowrap; }
+.inv-cell .btn { margin-left: 6px; padding: 2px 8px; }
+.step-tools { margin: 14px 0 6px; }
+#importLog { margin-top: 0; }

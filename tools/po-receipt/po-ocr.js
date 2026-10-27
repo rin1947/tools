@@ -21,9 +21,18 @@
   /* ---------- chỉnh nghiêng (bản scan thường lệch vài độ → đường kẻ không nằm trên 1 hàng điểm ảnh) ---------- */
   function skewAngle(img) {
     const W = img.width, H = img.height, d = darkMap(img);
+    // chỉ lấy các đoạn ngang tối dài ≥ 50px (đường kẻ bảng, gạch chân) — chữ, con dấu, chữ ký không làm lệch kết quả
     const pts = [];
-    for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 3) if (d[y * W + x]) pts.push(x, y);
+    for (let y = 0; y < H; y++) {
+      let run = 0;
+      for (let x = 0; x <= W; x++) {
+        if (x < W && d[y * W + x]) { run++; continue; }
+        if (run >= 50) for (let k = x - run; k < x; k += 4) pts.push(k, y);
+        run = 0;
+      }
+    }
     let best = 0, bestScore = -1;
+    if (pts.length < 200) return 0;
     for (let a = -3; a <= 3.0001; a += 0.05) {
       const t = Math.tan(a * Math.PI / 180); const hist = new Float64Array(H + 2 * W);
       for (let i = 0; i < pts.length; i += 2) { const yy = Math.round(pts[i + 1] - pts[i] * t) + W; if (yy >= 0 && yy < hist.length) hist[yy]++; }
@@ -84,15 +93,23 @@
       const s = sets.find((t) => Math.abs(t.x0 - l.x0) < 25 && Math.abs(t.x1 - l.x1) < 25 && l.pos - t.ys[t.ys.length - 1] < H * 0.08);
       if (s) s.ys.push(l.pos); else sets.push({ x0: l.x0, x1: l.x1, ys: [l.pos] });
     });
-    const t = sets.sort((a, b) => b.ys.length - a.ys.length)[0];
-    if (!t || t.ys.length < 3) return null;
-    const top = t.ys[0], bot = t.ys[t.ys.length - 1];
-    const vs = [];
-    for (let x = Math.max(0, t.x0 - 5); x <= Math.min(W - 1, t.x1 + 5); x++) {
-      let c = 0; for (let y = top; y <= bot; y++) { const i = y * W + x; c += (d[i] || d[i - 1] || d[i + 1]) ? 1 : 0; }   // đường mảnh: xét cả 2 điểm ảnh bên cạnh
-      if (c >= (bot - top) * 0.7) vs.push({ pos: x, x0: x, x1: x });
-    }
-    const xs = group(vs).map((v) => v.pos);
+    // bảng hàng = nhóm có nhiều CỘT nhất (các khung tổng tiền / chiết khấu bên dưới cũng có nhiều đường ngang nhưng ít cột)
+    const colsOf = (t) => {
+      const top = t.ys[0], bot = t.ys[t.ys.length - 1];
+      const vs = [];
+      for (let x = Math.max(1, t.x0 - 5); x <= Math.min(W - 2, t.x1 + 5); x++) {
+        let c = 0; for (let y = top; y <= bot; y++) { const i = y * W + x; c += (d[i] || d[i - 1] || d[i + 1]) ? 1 : 0; }   // đường mảnh: xét cả 2 điểm ảnh bên cạnh
+        if (c >= (bot - top) * 0.7) vs.push({ pos: x, x0: x, x1: x });
+      }
+      return group(vs).map((v) => v.pos);
+    };
+    let best = null;
+    sets.filter((t) => t.ys.length >= 3).forEach((t) => {
+      const xs = colsOf(t); const score = xs.length * 100 + t.ys.length;
+      if (xs.length >= 5 && (!best || score > best.score)) best = { t, xs, score };
+    });
+    if (!best) return null;
+    const t = best.t, xs = best.xs;
     return { ys: t.ys, xs, x0: t.x0, x1: t.x1 };
   }
 
@@ -137,9 +154,13 @@
     for (let c = 0; c + 1 < xs.length; c++) heads.push(await recognize(cell(0, c), 'header'));
     const find = (re) => heads.findIndex((h) => re.test(h));
     const col = { model: find(/MODEL|M[ÃA] S[ẢA]N/i), qty: find(/QTY|L[ƯU]?[OỢ]NG/i), price: find(/PRICE|[ĐD][OƠ]N GI/i), value: find(/VALUE|GI[ÁA] TR/i) };
+    // tiêu đề đọc sai 1 cột (vd QTY) → suy theo vị trí: SL đứng ngay trước Đơn giá, Thành tiền ngay sau Đơn giá
+    if (col.qty < 0 && col.price > 0) col.qty = col.price - 1;
+    if (col.value < 0 && col.price >= 0 && col.price + 2 < xs.length) col.value = col.price + 1;
+    if (col.price < 0 && col.qty >= 0 && col.value === col.qty + 2) col.price = col.qty + 1;
     if (Object.values(col).some((v) => v < 0)) {
       warnings.push(`Không nhận ra đủ tiêu đề cột (${heads.map((h) => h.replace(/\s+/g, ' ').trim()).join(' | ')}).`);
-      return { rows: [], warnings };
+      return { rows: [], warnings, heads, angle, grid };
     }
     // 2. từng dòng hàng
     const rows = [];
