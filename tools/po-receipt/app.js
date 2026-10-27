@@ -136,25 +136,42 @@
   function ensureLot() { if (!st.lots.length) st.lots.push({ id: uid(), name: '', date: '', note: '', cont: '' }); }
 
   /* Dòng kiểu PO (mã, SL, giá): thêm/cập nhật; hàng mới mặc định vào đợt 1 nếu chỉ có 1 đợt */
-  function applyPoRows(rows, source) {
+  /* source: 'po' (PO scan / bảng PO) → SL PO + giá PO · 'invoice' (hoá đơn) → ghi nhận SL & giá hoá đơn để đối chiếu,
+     chỉ lấy SL / giá hoá đơn khi dòng chưa có SL / giá. docKey = tên file (nạp lại cùng file không bị cộng trùng) */
+  function applyPoRows(rows, source, docKey) {
     ensureLot();
-    let add = 0, upd = 0;
+    let add = 0, upd = 0; const notInPo = [];
+    const poHasItems = st.items.some((x) => n0(parseNum(x.qty)) > 0);
     rows.forEach((r) => {
       const existed = st.items.some((x) => x.model === up(r.model));
+      if (source === 'invoice' && !existed && poHasItems) { notInPo.push(`${up(r.model)} (SL ${r.qty})`); return; }   // hàng trên HĐ không có trong PO
       const it = itemFor(r.model, r.desc);
+      if (source === 'invoice') {
+        it.invs = { ...(it.invs || {}) };
+        it.invs[docKey || 'HĐ'] = { qty: r.qty, price: r.price };
+        if (isFinite(r.vat)) it.vat = r.vat;
+        if (!String(it.name || '').trim() && r.desc) it.name = String(r.desc).replace(/\s*\([^()]*\)\s*$/, '').trim();
+        if (existed && n0(parseNum(it.qty)) > 0) {                      // dòng đã có SL PO: không đổi SL / giá, chỉ đối chiếu
+          if (!(parseNum(it.price) > 0) && r.price > 0) { it.price = r.price; it.priceFrom = 'invoice'; }
+          upd++; return;
+        }
+      }
       if (isFinite(r.qty)) {
         const oldQty = n0(parseNum(it.qty));
         it.qty = r.qty;
         // chỉ có 1 đợt: hàng mới, hàng chưa xếp đợt nào, hoặc đang xếp đủ SL cũ → xếp đủ SL mới vào đợt đó
         if (st.lots.length === 1 && (!existed || assigned(it) === 0 || assigned(it) === oldQty)) it.split = { [st.lots[0].id]: r.qty };
       }
-      if (isFinite(r.price) && r.price > 0) { it.price = r.price; it.priceFrom = source; }
+      if (isFinite(r.price) && r.price > 0) { it.price = r.price; it.priceFrom = source; if (source !== 'invoice') it.poPrice = r.price; }
       if (isFinite(r.vat)) it.vat = r.vat;
       if (!String(it.name || '').trim() && r.desc) it.name = String(r.desc).replace(/\s*\([^()]*\)\s*$/, '').trim();
       existed ? upd++ : add++;
     });
-    return { add, upd };
+    return { add, upd, notInPo };
   }
+  const invList = (it) => Object.entries(it.invs || {});
+  const invQty = (it) => invList(it).reduce((a, [, v]) => a + n0(v.qty), 0);
+  const invPrices = (it) => [...new Set(invList(it).map(([, v]) => v.price).filter((p) => p > 0))];
   /* Lịch giao NCC: SL đã giao → đợt theo ngày giao; phần chưa giao để ở "Còn lại" */
   function applyDelivery(rows) {
     let add = 0, upd = 0, pend = 0; const diff = [];
@@ -213,7 +230,7 @@
   function renderItems() {
     const lotHeads = st.lots.map((l, i) => `<th class="num lot-col" title="${esc(lotName(l, i))}">Đợt ${i + 1}</th>`).join('');
     $('itemHead').innerHTML = `<tr><th>#</th><th>Model</th><th>Mã hàng MISA</th><th>Tên hàng</th><th>ĐVT</th><th class="num">SL PO</th>
-      <th class="num">Đơn giá</th><th class="num">Thành tiền</th><th class="num">Số khối</th><th class="num">VAT %</th>${lotHeads}<th class="num">Còn lại</th><th></th></tr>`;
+      <th class="num">Đơn giá</th><th class="num">Giá HĐ <span class="hint" tabindex="0" data-tip="Đơn giá trên hoá đơn đã nạp, để so với đơn giá PO. Đỏ = lệch giá.">?</span></th><th class="num">Thành tiền</th><th class="num">Số khối</th><th class="num">VAT %</th>${lotHeads}<th class="num">Còn lại</th><th></th></tr>`;
     $('itemBody').innerHTML = st.items.map((it, k) => {
       const unknown = !catFind(it.model);
       return `<tr data-id="${it.id}" class="${unknown ? 'unknown' : ''}">
@@ -224,6 +241,7 @@
         <td><input class="w-xs" data-k="unit" value="${esc(it.unit)}"></td>
         <td><input class="w-xs in-num" data-k="qty" inputmode="decimal" value="${esc(it.qty)}"></td>
         <td><input class="w-sm in-num" data-k="price" inputmode="decimal" value="${it.price === '' ? '' : esc(fmt.vnd(parseNum(it.price)))}" title="${it.priceFrom === 'cat' ? 'Giá gần nhất trong danh mục — kiểm tra lại với PO' : ''}">${it.priceFrom === 'cat' ? '<span class="tag">giá cũ</span>' : ''}</td>
+        <td class="num" data-out="inv"></td>
         <td class="num" data-out="amt">${fmt.vnd(n0(parseNum(it.qty)) * n0(parseNum(it.price)))}</td>
         <td><input class="w-xs in-num" data-k="cbm" inputmode="decimal" value="${esc(it.cbm)}"></td>
         <td><input class="w-xs in-num" data-k="vat" inputmode="decimal" value="${esc(it.vat)}" placeholder="${S.vat}"></td>
@@ -231,7 +249,7 @@
         <td class="num rest" data-out="rest"></td>
         <td><button class="btn-x" data-del-item="${it.id}" title="Xoá dòng">✕</button></td>
       </tr>`;
-    }).join('') || `<tr><td colspan="${12 + st.lots.length}" class="muted">Chưa có dòng hàng.</td></tr>`;
+    }).join('') || `<tr><td colspan="${13 + st.lots.length}" class="muted">Chưa có dòng hàng.</td></tr>`;
   }
 
   function renderDerived() {
@@ -240,10 +258,14 @@
       const tr = document.querySelector(`#itemBody tr[data-id="${it.id}"]`);
       if (!tr) return;
       tr.querySelector('[data-out="amt"]').textContent = fmt.vnd(n0(parseNum(it.qty)) * n0(parseNum(it.price)));
+      const ip = invPrices(it); const ic = tr.querySelector('[data-out="inv"]');
+      ic.textContent = ip.map((p) => fmt.vnd(p)).join(' / ');
+      ic.className = 'num ' + (ip.length ? (ip.every((p) => Math.abs(p - parseNum(it.price)) < 0.5) ? 'match' : 'mismatch') : '');
+      ic.title = invList(it).map(([k, v]) => `${k}: SL ${v.qty} × ${fmt.vnd(v.price)}`).join('\n');
       const r = rest(it); const c = tr.querySelector('[data-out="rest"]');
       c.textContent = fmt.num(r, 0); c.className = 'num rest ' + (r === 0 ? 'ok' : 'bad');
     });
-    $('itemFoot').innerHTML = st.items.length ? `<tr><td colspan="5">Tổng</td><td class="num">${fmt.num(t.qty, 0)}</td><td></td>
+    $('itemFoot').innerHTML = st.items.length ? `<tr><td colspan="5">Tổng</td><td class="num">${fmt.num(t.qty, 0)}</td><td></td><td></td>
       <td class="num">${fmt.vnd(t.amount)}</td><td class="num">${fmt.num(t.cbm, 2)}</td><td></td>
       ${t.lots.map((l) => `<td class="num">${fmt.num(l.qty, 0)}</td>`).join('')}<td class="num">${fmt.num(t.qty - t.lots.reduce((s, l) => s + l.qty, 0), 0)}</td><td></td></tr>` : '';
     t.lots.forEach((l, i) => {
@@ -271,6 +293,11 @@
       if (it.model && !String(it.name || '').trim()) out.push(['bad', `${nm}: chưa có tên hàng.`]);
       if (!(parseNum(it.price) > 0)) out.push(['warn', `${nm}: chưa có đơn giá (file MISA cần).`]);
       else if (it.priceFrom === 'cat') out.push(['warn', `${nm}: đang dùng giá gần nhất trong danh mục (${fmt.vnd(parseNum(it.price))}) — kiểm tra lại với PO.`]);
+      invPrices(it).forEach((p) => {
+        if (parseNum(it.price) > 0 && Math.abs(p - parseNum(it.price)) >= 0.5)
+          out.push(['bad', `${nm}: giá hoá đơn ${fmt.vnd(p)} ≠ đơn giá PO ${fmt.vnd(parseNum(it.price))} (lệch ${fmt.vnd(p - parseNum(it.price))}/cái).`]);
+      });
+      if (invList(it).length && invQty(it) > n0(parseNum(it.qty))) out.push(['warn', `${nm}: tổng SL trên hoá đơn (${invQty(it)}) nhiều hơn SL PO (${n0(parseNum(it.qty))}).`]);
       if (!(parseNum(it.cbm) > 0)) out.push(['warn', `${nm}: chưa có số khối.`]);
       const ce = it.model ? catFind(it.model) : null;
       if (it.model && !ce) out.push(['warn', `${nm}: mã chưa có trong danh mục — kiểm tra tên, số khối và nhớ tạo mã ${it.code} trên MISA trước khi import.`]);
@@ -393,7 +420,7 @@
       log(`${label} — lịch giao: ${res.rows.length} mã (${r.add} mới, ${r.upd} cập nhật).${r.pend ? ` Còn <b>${fmt.num(r.pend, 0)}</b> cái chưa giao → bấm <b>↳ Dồn phần còn lại vào đợt mới</b>.` : ''}`
         + (r.diff.length ? `<br>⚠️ SL trên lịch giao khác SL PO (giữ SL PO): ${esc(r.diff.join('; '))}` : ''), !r.pend && !r.diff.length);
     } else {
-      const r = applyPoRows(res.rows, 'paste');
+      const r = applyPoRows(res.rows, 'po');
       log(`${label} — bảng PO: ${res.rows.length} dòng (${r.add} mới, ${r.upd} cập nhật SL / đơn giá).`, true);
     }
   }
@@ -432,19 +459,100 @@
     lines.forEach((l) => l.toks.sort((a, b) => a.x - b.x));
     return lines;
   }
+  /* ---------- OCR cho PO scan (tesseract.js chạy trên máy; tải thư viện + dữ liệu chữ tiếng Anh lần đầu ~3 MB) ---------- */
+  const TESS = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/';
+  const OCR_MODES = {
+    header: { tessedit_pageseg_mode: '6', tessedit_char_whitelist: '' },
+    text: { tessedit_pageseg_mode: '6', tessedit_char_whitelist: '' },
+    model: { tessedit_pageseg_mode: '7', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/.' },
+    num: { tessedit_pageseg_mode: '7', tessedit_char_whitelist: '0123456789,.' },
+  };
+  let ocrWorker = null;
+  async function getOcr() {
+    if (ocrWorker) return ocrWorker;
+    const T = await loadScript(TESS + 'tesseract.min.js', 'Tesseract');
+    ocrWorker = await T.createWorker('eng', 1, {
+      workerPath: TESS + 'worker.min.js', corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1',
+      langPath: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0/4.0.0_best_int', gzip: true,
+    });
+    return ocrWorker;
+  }
+  async function ocrImage(img, onProgress) {
+    const w = await getOcr(); let cur = null;
+    const cv = document.createElement('canvas');
+    const rec = async (cell, mode) => {
+      if (cur !== mode) { await w.setParameters(OCR_MODES[mode]); cur = mode; }
+      cv.width = cell.width; cv.height = cell.height;
+      cv.getContext('2d').putImageData(new ImageData(cell.data, cell.width, cell.height), 0, 0);
+      const { data } = await w.recognize(cv); return data.text;
+    };
+    const models = [...new Set([...Object.keys(CAT), ...st.items.map((it) => it.model)].filter(Boolean))];
+    return PoOcr.readPo(img, rec, models, onProgress);
+  }
+  /* ảnh các trang: PDF → vẽ bằng pdf.js ở ~300 dpi; file ảnh → vẽ thẳng */
+  async function pagesAsImages(file) {
+    const out = [];
+    const draw = (src, w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); return { c, x }; };
+    if (/\.pdf$/i.test(file.name)) {
+      const pdfjs = await loadScript(PDFJS + 'pdf.min.js', 'pdfjsLib');
+      pdfjs.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js';
+      const doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+      for (let p = 1; p <= Math.min(doc.numPages, 5); p++) {
+        const page = await doc.getPage(p); const v0 = page.getViewport({ scale: 1 });
+        const vp = page.getViewport({ scale: 2480 / v0.width });
+        const { c, x } = draw(null, Math.round(vp.width), Math.round(vp.height));
+        await page.render({ canvasContext: x, viewport: vp }).promise;
+        out.push(x.getImageData(0, 0, c.width, c.height));
+      }
+    } else {
+      const bmp = await createImageBitmap(file);
+      const k = bmp.width < 2000 ? 2480 / bmp.width : 1;
+      const { c, x } = draw(null, Math.round(bmp.width * k), Math.round(bmp.height * k));
+      x.drawImage(bmp, 0, 0, c.width, c.height);
+      out.push(x.getImageData(0, 0, c.width, c.height));
+    }
+    return out;
+  }
+  async function importScan(f) {
+    log(`🔎 ${esc(f.name)}: đang đọc bản scan (lần đầu cần tải bộ đọc chữ, chờ chút)…`);
+    const pages = await pagesAsImages(f);
+    let res = null;
+    for (let i = 0; i < pages.length && !(res && res.rows.length); i++) {
+      res = await ocrImage(pages[i], (r, n) => { toast(`Đang đọc PO scan: dòng ${r}/${n}…`); });
+    }
+    if (!res || !res.rows.length) { log(`📄 ${esc(f.name)}: không đọc được bảng hàng từ bản scan${res && res.warnings.length ? ' — ' + esc(res.warnings.join('; ')) : ''}. Hãy dán bảng (📋) hoặc nhập tay.`); return; }
+    if (res.poNo && !st.poNo) st.poNo = res.poNo;
+    else if (res.poNo && up(res.poNo) !== up(st.poNo)) log(`⚠️ Số PO trên bản scan là <b>${esc(res.poNo)}</b>, khác số PO đang làm (${esc(st.poNo)}).`);
+    if (res.poDate) st.poDate = res.poDate;
+    const sum = res.rows.reduce((a, r) => a + n0(r.qty) * n0(r.price), 0);
+    if (res.total > 0) st.poTotal = String(res.total);
+    const r = applyPoRows(res.rows.filter((x) => x.model), 'po', f.name);
+    const fixed = res.rows.filter((x) => x.fixed).map((x) => (x.raw !== x.model ? `${x.raw}→${x.model}` : x.model) + (x.note ? ` (${x.note})` : ''));
+    const bad = res.rows.filter((x) => !x.ok || x.unknown).map((x) => `${x.model || x.raw}: ${x.unknown ? 'mã lạ, không có trong danh mục' : x.note}`);
+    const totOk = res.total > 0 && Math.abs(sum - res.total) < 1;
+    log(`📄 ${esc(f.name)} (PO scan): ${res.rows.length} dòng — ${r.add} mã mới, ${r.upd} cập nhật. `
+      + (totOk ? `Tổng ${fmt.vnd(sum)} <b>khớp</b> dòng tổng trên PO ✓` : `Tổng các dòng ${fmt.vnd(sum)}${res.total > 0 ? ` <b>lệch</b> dòng tổng trên PO ${fmt.vnd(res.total)}` : ''} — kiểm tra lại.`)
+      + (fixed.length ? `<br>🔧 Tool đã tự sửa: ${esc(fixed.join('; '))}` : '')
+      + (bad.length ? `<br>⚠️ Cần xem lại: ${esc(bad.join('; '))}` : ''), totOk && !bad.length);
+  }
   $('fileDoc').onchange = async (e) => {
     for (const f of e.target.files) {
       try {
-        let res;
+        if (/\.(png|jpe?g|webp|bmp)$/i.test(f.name)) { await importScan(f); continue; }
+        let res, kind = 'invoice';
         if (/\.xml$/i.test(f.name)) res = P.invoiceXml(await f.text());
         else {
           const lines = await pdfToLines(f);
-          if (!lines.length) { log(`📄 ${esc(f.name)}: PDF dạng ảnh scan, không có chữ để đọc → hãy dán bảng (📋) hoặc nhập tay.`); continue; }
+          if (lines.length < 5) { await importScan(f); continue; }        // PDF ảnh scan → đọc bằng OCR
+          const text = lines.map((l) => l.toks.map((t) => t.s).join(' ')).join(' ');
+          kind = /PURCHASE\s*ORDER|ĐƠN\s*ĐẶT\s*HÀNG/i.test(text) && !/HÓA\s*ĐƠN|HOÁ\s*ĐƠN|INVOICE/i.test(text) ? 'po' : 'invoice';
           res = P.pdfLines(lines, known);
         }
         if (!res.rows.length) { log(`📄 ${esc(f.name)}: không tìm thấy dòng hàng (SL × đơn giá = thành tiền).`); continue; }
-        const r = applyPoRows(res.rows, 'doc');
-        log(`📄 ${esc(f.name)}: ${res.rows.length} dòng — ${r.add} mã mới, ${r.upd} cập nhật SL / đơn giá.${(res.warnings || []).length ? ' ⚠️ ' + esc(res.warnings.join('; ')) : ''}`, true);
+        const r = applyPoRows(res.rows, kind, f.name);
+        log(`📄 ${esc(f.name)} (${kind === 'po' ? 'PO' : 'hoá đơn'}): ${res.rows.length} dòng — ${r.add} mã mới, ${r.upd} ${kind === 'po' ? 'cập nhật SL / đơn giá' : 'đối chiếu với PO'}.`
+          + `${(res.warnings || []).length ? ' ⚠️ ' + esc(res.warnings.join('; ')) : ''}`
+          + (r.notInPo.length ? `<br>⚠️ Hàng trên hoá đơn KHÔNG có trong PO (không thêm vào): ${esc(r.notInPo.join('; '))}` : ''), !r.notInPo.length);
       } catch (err) { log(`📄 ${esc(f.name)}: lỗi — ${esc(err.message)}`); }
     }
     e.target.value = ''; renderAll();

@@ -28,7 +28,7 @@ window.TOOLS = [
     id: 'po-receipt',
     name: 'Phiếu nhập kho & File MISA',
     icon: '📦',
-    description: 'Nạp Excel / dán PO, lịch giao NCC → chia đợt → xuất Phiếu đề nghị nhập kho (.xlsx) và file nhập đơn mua hàng MISA (.xls) khớp tên lô.',
+    description: 'Nạp PO scan (OCR) / Excel / lịch giao NCC, so giá hoá đơn → chia đợt → xuất Phiếu đề nghị nhập kho (.xlsx) và file nhập đơn mua hàng MISA (.xls) khớp tên lô.',
     path: 'tools/po-receipt/index.html',
     status: 'live',
     category: 'Kho',

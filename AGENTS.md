@@ -127,9 +127,11 @@ Phát triển riêng bởi người dùng, đã tách thành:
 | `app.js` | Trạng thái PO (đợt, dòng hàng, SL từng đợt), dán bảng, nạp PDF/XML, mở phiếu cũ, xuất file |
 | `parsers.js` | Đọc hoá đơn PDF lấy cả **tên hàng** (cột mô tả nhiều dòng, bỏ phần tiếng Anh trong ngoặc). Đọc bảng dán (email lịch giao / Excel PO), PDF có chữ (tìm bộ SL × Đơn giá = Thành tiền), hoá đơn XML, mở lại phiếu nhập kho / file MISA, danh mục hàng. Chạy được bằng Node để kiểm thử |
 | `export.js` | Phiếu đề nghị nhập kho (ExcelJS, đúng khuôn phiếu gốc) và mô tả file nhập đơn mua hàng MISA 28 cột + sheet "Danh sách hàng hoá" (font, màu nền, khung, độ cao dòng đo từ mẫu MISA gốc) |
+| `po-ocr.js` | Đọc **PO dạng ảnh scan** (OCR, tesseract.js chạy trên máy): chỉnh nghiêng → tìm đường kẻ bảng → đọc từng ô (mã, SL, đơn giá, thành tiền) → kiểm SL × giá = thành tiền và tổng dưới bảng → sửa mã theo danh mục (O↔0, I↔1, S↔5, B↔8…). Kiểm thử bằng Node (tesseract.js + pngjs) |
 | `xls-writer.js` | Bộ ghi `.xls` (BIFF8) **có định dạng** tự viết — SheetJS miễn phí ghi .xls bị mất định dạng. Đóng gói bằng `XLSX.CFB`. Kiểm thử: đọc lại bằng xlrd / SheetJS / LibreOffice |
 
 - **Tên lô = Số đơn hàng MISA** = `<Số PO> <viết tắt kho> đợt <n>` (bỏ " đợt 1" khi PO chỉ 1 đợt, tuỳ chọn). Hai file phải luôn khớp nhau.
+- **PO scan & so giá hoá đơn**: nút "Nạp PO scan / hoá đơn" — PDF không có chữ hoặc file ảnh → OCR (`po-ocr.js`) → SL + giá PO (`poPrice`); PDF có chữ / XML hoá đơn → ghi vào `it.invs[tên file] = {qty, price}` để đối chiếu (không đổi SL / giá PO, hàng không có trong PO thì chỉ báo, không thêm). Cột "Giá HĐ" đỏ khi lệch; phần Kiểm tra báo lệch giá và SL hoá đơn vượt PO.
 - **Danh mục hàng** có 2 nút nạp: *File data sản phẩm NCC* (Model, Tên, CBM) và *Danh sách hàng hoá MISA* (STT, Mã, Tên — file xuất từ MISA; nạp lại thì báo mã mới / đổi tên, bỏ dấu "có trên MISA" với mã không còn trong danh sách). File data sản phẩm NCC là nguồn số khối — nạp bản mới thì **ghi đè số khối**, báo mã mới / mã đổi số khối, cập nhật PO đang làm (trừ ô đã sửa tay). Danh sách hàng hoá MISA (Mã có tiền tố, Tên) quyết định mã + tên hàng.
 - `Mau-Nhap-PO.xlsx`: file mẫu nhập PO (chỉ dữ liệu ví dụ `VD-…`). Cột nhận theo tên tiêu đề (`HEAD` trong parsers.js), dùng chung cho dán bảng và nạp Excel.
 - Cột file MISA giữ **đúng thứ tự và tên tiêu đề** của mẫu nhập đơn mua hàng MISA (`MISA_HEAD`) — không đổi.
@@ -182,6 +184,7 @@ Phong cách: **hồng cute · xanh tre · gấu trúc**. Mềm, bo tròn, thân 
 - **Xuất Excel:** `GauBep.exportXlsx(tênFile, [{ name, rows, colWidths }])`. Số xuất ra dạng **number** (không phải chuỗi đã format). Tên file: `<TienTo>_<tên>_<ddmmyy>.xlsx` (dùng `GauBep.today()`).
 - **Chống cache khi cập nhật:** trong `index.html` của tool, file CSS/JS nội bộ gắn đuôi `?v=YYYYMMDDx` (vd `app.js?v=20261026c`). Mỗi lần sửa tool phải **tăng** đuôi này, nếu không trình duyệt có thể vẫn chạy bản cũ.
 - **Thư viện ngoài:** chỉ khi thật cần, chỉ lấy từ `cdnjs.cloudflare.com`, và tải lười (lazy) như `loadSheetJS` trong `common.js`.
+  Ngoại lệ duy nhất: OCR (tesseract.js 5.1.1 + tesseract.js-core + dữ liệu chữ `@tesseract.js-data/eng`) lấy từ `cdn.jsdelivr.net` (cdnjs không có bộ core/dữ liệu); ghim đúng phiên bản, ảnh vẫn xử lý trên máy, không gửi đi.
 - **Không** gọi API ngoài với dữ liệu người dùng. **Không** đưa dữ liệu thật (giá, NCC, hoá đơn) vào repo — chỉ dữ liệu mẫu.
 - **Dữ liệu tham chiếu** (mã HS, thuế suất, phí…) để ở file `.js` riêng trong thư mục tool, có comment nguồn + trường `checked` cho biết đã đối chiếu hay chưa.
 - Tên biến/hàm tiếng Anh; nội dung hiển thị và comment giải thích nghiệp vụ tiếng Việt.

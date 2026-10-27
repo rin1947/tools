@@ -55,3 +55,6 @@
 .link { color: var(--accent); font-weight: 800; text-decoration: underline; }
 
 .src-list { margin: 4px 0 12px; padding-left: 20px; display: grid; gap: 2px; }
+
+.item-table td.mismatch { color: var(--danger); font-weight: 900; }
+.item-table td.match { color: var(--accent); font-weight: 800; }

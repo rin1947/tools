@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Phiếu nhập kho &amp; File MISA</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
-  <link rel="stylesheet" href="../../assets/theme.css?v=20261027e">
-  <link rel="stylesheet" href="style.css?v=20261027e">
+  <link rel="stylesheet" href="../../assets/theme.css?v=20261027g">
+  <link rel="stylesheet" href="style.css?v=20261027g">
 </head>
 <body>
   <main class="page">
@@ -15,7 +15,7 @@
       <section class="hero no-print">
         <div style="font-size:56px">📦</div>
         <div>
-          <h1>Phiếu nhập kho &amp; File MISA <span class="badge live">bản 27/10 · 4</span></h1>
+          <h1>Phiếu nhập kho &amp; File MISA <span class="badge live">bản 27/10 · 5</span></h1>
           <p>Từ PO và lịch giao của nhà cung cấp → chia đợt giao → xuất <b>Phiếu đề nghị nhập kho</b> (.xlsx) và <b>file nhập đơn mua hàng MISA</b> (.xls), số đơn hàng khớp với tên lô trên phiếu.</p>
         </div>
         <span id="bamboo"></span>
@@ -140,8 +140,8 @@
             <input type="file" id="fileExcel" accept=".xlsx,.xls,.csv" multiple hidden>
           </label>
           <button class="btn btn-ghost btn-sm" id="btnPaste">📋 Dán bảng</button>
-          <label class="btn btn-ghost btn-sm file-btn">📄 Nạp PO / hoá đơn (PDF / XML)
-            <input type="file" id="fileDoc" accept=".pdf,.xml" multiple hidden>
+          <label class="btn btn-ghost btn-sm file-btn">📄 Nạp PO scan / hoá đơn (PDF, ảnh, XML)
+            <input type="file" id="fileDoc" accept=".pdf,.xml,.png,.jpg,.jpeg" multiple hidden>
           </label>
           <button class="btn btn-pink btn-sm" id="btnAddItem">＋ Thêm dòng</button>
           <span style="flex:1"></span>
@@ -202,10 +202,11 @@
     </div>
   </main>
 
-  <script src="../../assets/common.js?v=20261027e"></script>
-  <script src="parsers.js?v=20261027e"></script>
-  <script src="export.js?v=20261027e"></script>
-  <script src="xls-writer.js?v=20261027e"></script>
-  <script src="app.js?v=20261027e"></script>
+  <script src="../../assets/common.js?v=20261027g"></script>
+  <script src="parsers.js?v=20261027g"></script>
+  <script src="export.js?v=20261027g"></script>
+  <script src="po-ocr.js?v=20261027g"></script>
+  <script src="xls-writer.js?v=20261027g"></script>
+  <script src="app.js?v=20261027g"></script>
 </body>
 </html>
