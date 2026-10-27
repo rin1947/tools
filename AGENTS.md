@@ -142,14 +142,16 @@ Phát triển riêng bởi người dùng, đã tách thành:
 
 | File | Nội dung |
 |---|---|
-| `index.html` | Giao diện: Cài đặt & thư viện, 1 Chứng từ, 2 Thông tin lô, 3 Danh sách hàng, 4 Kiểm tra chéo, 5 Phiếu khai theo ECUS (copy từng ô), 6 Ước tính thuế |
-| `parsers.js` | Đọc chữ PDF (pdf.js) của Bill / Commercial Invoice / Packing List / C/O. Chạy được bằng Node để kiểm thử. Bảng mã cảng `POL`, `POD` (kèm mã địa điểm lưu kho) |
-| `app.js` | Trạng thái lô, thư viện model, kiểm tra chéo, phiếu khai, ước tính thuế, xuất file danh sách hàng ECUS |
+| `index.html` | Giao diện: Cài đặt & thư viện, 1 Chứng từ, 2 Thông tin lô, 3 Danh sách hàng (+ bảng gợi ý mã HS), 4 Tem phụ & mô tả hàng, 5 Kiểm tra chéo, 6 Phiếu khai theo ECUS (copy từng ô), 7 Ước tính thuế |
+| `parsers.js` | Đọc chữ của Bill / Commercial Invoice / Packing List / C/O / **Hợp đồng** (`contract()`: số HĐ, ngày ký, ngày ghi lại ở điều khoản hiệu lực, ngày hết hạn — thấy mỗi "MM/YYYY" thì lấy ngày cuối tháng và đánh dấu `endGuess`, tên + địa chỉ bên bán, nhãn hiệu; sửa lỗi OCR 0Sth → 05th). Chạy được bằng Node. Bảng mã cảng `POL`, `POD` |
+| `translate.js` | Dịch sang tiếng Việt cho tem phụ bằng từ điển (không gọi dịch vụ ngoài): tên hàng, tên công ty TQ, địa chỉ TQ (pinyin → Hán Việt tỉnh/thành hay gặp). Từ không có trong từ điển giữ nguyên + trả về `unknown` để người dùng sửa tay. `ecusAddress()` tách địa chỉ thành ≤ 4 dòng chữ in ≤ 35 ký tự cho ECUS. Thêm từ: bổ sung mảng `PRODUCT` / `ORG` / `PLACES` / `ZONES` |
+| `app.js` | Đọc file (PDF có chữ → pdf.js; PDF scan / ảnh → OCR tesseract.js như tool Phiếu nhập kho; .docx → JSZip), hồ sơ NCC từ hợp đồng, thư viện model + tem phụ (EAN-13 vẽ SVG, in tem), kiểm tra chéo, phiếu khai, ước tính thuế, xuất file danh sách hàng ECUS |
 
 - **Biểu thuế**: KHÔNG có bản riêng — đọc `../landed-cost/tariff-data.js` (hoặc biểu thuế người dùng nạp trong Landed Cost: IndexedDB `landedcost` / khoá `tariff`) và điều chỉnh `lc_ovr`. Thuế NK = ACFTA khi có C/O Form E + xuất xứ CN, ngược lại MFN.
-- **Thư viện model** có thể lấy từ `lc_products` của Landed Cost (cùng Mã SP). Không ghi ngược vào dữ liệu của Landed Cost.
+- **Mã HS liên kết Landed Cost**: model nào có sản phẩm cùng mã (hoặc mã chứa nhau, ≥ 5 ký tự) trong `lc_products` thì lấy HS + tên + trọng lượng + nhà máy từ đó; nút "🚢 Lấy HS từ Landed Cost" cập nhật lại cho cả lô; Kiểm tra báo khi HS phiếu khai khác Landed Cost. Bảng gợi ý HS đọc **bảng từ khoá `const KEYWORDS=[…]` ngay trong `../landed-cost/app.js`** (fetch + tách mảng, không sửa Landed Cost) — nếu đổi tên / cấu trúc biến này ở Landed Cost thì sửa `loadLcKeywords()` cho khớp. Không ghi ngược vào dữ liệu của Landed Cost.
+- **Thư viện model** (`S.models[mã]`): `hs`, `hsSrc` ('lc' | ''), `unit`, `bt`, `tem{…}` (chỉ lưu ô đã sửa tay; ô trống lấy tự động từ Landed Cost / hợp đồng / Invoice / PL), `img`, `desc` + `descManual`. Mô tả khai HQ tạo từ tem (`genDesc`). Tên + địa chỉ NSX tiếng Việt sửa ở tem thì lưu vào NCC (`nameVi`, `addrVi`) để dùng lại.
 - **File danh sách hàng ECUS5**: `.xls` (biff8), sheet `Sheet1`, đúng 25 cột `ECUS_HEAD` trong app.js — không đổi tên / thứ tự cột. Ô trống để trống thật (null). ECUS tự tính thuế suất, tiền thuế.
-- Không đưa tên NCC, số hợp đồng, model thật vào code; dữ liệu mẫu dùng `VD-…`.
+- Không đưa tên NCC, số hợp đồng, model, mã vạch thật vào code; dữ liệu mẫu dùng `VD-…`.
 
 ## 4. Quy tắc giao diện (bắt buộc)
 

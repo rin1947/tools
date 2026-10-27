@@ -4,6 +4,8 @@
    CustomsParsers.linesFromPdfPages(pages)  pages = [[{ s, x, y }]] → chuỗi văn bản theo dòng
    CustomsParsers.classify(text)            → 'bill' | 'ci' | 'pl' | 'co' | null
    CustomsParsers.bill(text) / ci(text) / pl(text) / co(text) → object các trường đọc được
+   CustomsParsers.contract(text) → { contractNo, contractDate, contractDate2, contractEnd, endGuess, sellerName, sellerAddr, brand }
+     (đọc được cả chữ OCR từ bản scan: sửa 0Sth → 05th, ngày hết hạn chỉ thấy "12/2026" → lấy ngày cuối tháng)
    CustomsParsers.num("15.450,00") → 15450   (hiểu cả kiểu VN và kiểu EN)
    Chạy được bằng Node để kiểm thử: node -e "require('./parsers.js')"
    ========================================================= */
@@ -64,6 +66,7 @@
 
   function classify(t) {
     const u = String(t).toUpperCase();
+    if (/CONTRACT|HỢP ĐỒNG|HOP DONG/.test(u) && /SELLER|BÊN BÁN/.test(u) && /BUYER|BÊN MUA/.test(u) && /ARTICLE|ĐIỀU\s*\d|TERMS/.test(u)) return 'hd';
     if (/CERTIFICATE OF ORIGIN|FORM\s+E\b|ACFTA/.test(u)) return 'co';
     if (/PACKING\s*LIST/.test(u)) return 'pl';
     if (/COMMERCIAL\s*INVOICE|\bINVOICE\b/.test(u) && !/BILL OF LADING|SHIPPED ON BOARD/.test(u)) return 'ci';
@@ -149,7 +152,56 @@
     return o;
   }
 
-  const API = { num, findDates, linesFromPdfPages, classify, bill, ci, pl, co, POL, POD };
+  /* OCR hay đọc nhầm số trong ngày: O→0, S→5, I/l/|→1 (chỉ sửa trong cụm "05th", "0S/10") */
+  function fixOcrDigits(t) {
+    return String(t)
+      .replace(/\b([0-9OSIl|]{1,2})(st|nd|rd|th)\b/gi, (m, d, suf) => d.replace(/[Oo]/g, '0').replace(/S/g, '5').replace(/[Il|]/g, '1') + suf)
+      .replace(/\b([0-9OSIl]{1,2})\/([0-9OSIl]{1,2})\/(\d{4})\b/g, (m, a, b, y) => [a, b].map((x) => x.replace(/O/g, '0').replace(/S/g, '5').replace(/[Il]/g, '1')).join('/') + '/' + y);
+  }
+  const STOP = /^(TEL|PHONE|FAX|MOBILE|E-?MAIL|REPRESENTED|HEREINAFTER|ACCOUNT|BANK|TAX|MST|ĐIỆN THOẠI|ĐẠI DIỆN|WEBSITE|CONTACT|AND\s*:|ATTN)/i;
+  function contract(text) {
+    const t = fixOcrDigits(String(text).replace(/\r/g, ''));
+    const L = t.split('\n').map((s) => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const o = {}; let m;
+    if ((m = t.match(/(?:CONTRACT|HỢP ĐỒNG)\s*(?:NO|NUMBER|SỐ)\.?\s*[:.]?\s*([A-Z0-9][A-Z0-9\-\/._']{3,})/i))) o.contractNo = m[1].replace(/['.]+$/g, '').replace(/'/g, '').toUpperCase();
+    // ngày ký: dòng "Date" đầu tiên (thường ngay dưới số hợp đồng)
+    const iNo = L.findIndex((l) => /CONTRACT\s*NO|HỢP ĐỒNG\s*SỐ/i.test(l));
+    for (let i = Math.max(0, iNo); i < Math.min(L.length, iNo + 4); i++) {
+      const d = /DATE|NGÀY|DATED/i.test(L[i]) ? findDates(L[i]) : [];
+      if (d.length) { o.contractDate = d[0].v; break; }
+    }
+    // ngày ghi lại ở điều khoản hiệu lực ("contract no. … dated 05th May, 2025") — để so khớp
+    if ((m = t.match(/DATED\s+(.{0,30})/i))) { const d = findDates(m[1]); if (d.length) o.contractDate2 = d[0].v; }
+    if (!o.contractDate && o.contractDate2) o.contractDate = o.contractDate2;
+    // hết hạn
+    for (const em of t.matchAll(/(?:\bTERMI\w*|EXPIR\w*|VALID\s+(?:UNTIL|TILL|TO)|EFFECTIVE\s+(?:UNTIL|TILL|TO)|HIỆU LỰC ĐẾN|HẾT HẠN|END\s*DATE)([\s\S]{0,60})/gi)) {
+      const d = findDates(em[1]);
+      if (d.length) { o.contractEnd = d[0].v; break; }
+      if ((m = em[1].match(/\b(\d{1,2})\s*[\/.\-]\s*(\d{4})\b/)) && +m[1] >= 1 && +m[1] <= 12) {
+        const last = new Date(+m[2], +m[1], 0).getDate(); o.contractEnd = iso(m[2], m[1], last); o.endGuess = true; break;
+      }
+    }
+    // bên bán: khối dòng phía trước "called The Seller" / "(the Seller)" / "Bên bán"
+    let iS = L.findIndex((l) => /(?:CALLED|AS)\s*[“"'‘]?\s*THE\s*SELLER|\(\s*THE\s*SELLER|^SELLER\s*:|^THE SELLER\s*:|BÊN BÁN/i.test(l));
+    if (iS >= 0) {
+      const from = /^(THE\s*)?SELLER\s*:|BÊN BÁN\s*:/i.test(L[iS]) ? iS : Math.max(0, iS - 8);
+      const block = L.slice(from, iS + (from === iS ? 8 : 1));
+      const nameLine = block.find((l) => /(CO\b|CO\.|LTD|LIMITED|CORP|COMPANY|INC\b)/i.test(l) && !/^ADDRESS/i.test(l));
+      if (nameLine) o.sellerName = nameLine.replace(/^(BETWEEN|THE\s*SELLER|SELLER|BÊN BÁN|NAME)\s*:?\s*/i, '').replace(/CO\s*[,.]+\s*,?\s*LTD\.?/i, 'CO., LTD').replace(/\s+/g, ' ').trim();
+      const ia = block.findIndex((l) => /^(ADDRESS|ADD|ĐỊA CHỈ)\s*[:.]/i.test(l));
+      if (ia >= 0) {
+        const parts = [block[ia].replace(/^(ADDRESS|ADD|ĐỊA CHỈ)\s*[:.]\s*/i, '')];
+        for (let j = ia + 1; j < block.length && !STOP.test(block[j]) && parts.length < 3; j++) parts.push(block[j]);
+        o.sellerAddr = parts.join(', ').replace(/\s*,\s*,/g, ',').trim();
+      }
+    }
+    // nhãn hiệu: "Brand name: X" / "Brand: X" / "Nhãn hiệu: X" (bỏ qua câu thường như "100% new brand, All the goods")
+    if ((m = t.match(/BRAND\s*NAME\s*[:.]?\s*([A-Za-z][A-Za-z0-9&\-]*)/i)) || (m = t.match(/(?:^|\n|-)\s*BRAND\s*:\s*([A-Za-z][A-Za-z0-9&\-]*)/i))
+      || (m = t.match(/NHÃN HIỆU\s*:\s*([A-Za-z][A-Za-z0-9&\-]*)/i))) o.brand = m[1];
+    return o;
+  }
+
+  const API = { num, findDates, linesFromPdfPages, classify, bill, ci, pl, co, contract, fixOcrDigits, POL, POD };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else root.CustomsParsers = API;
 })(typeof window !== 'undefined' ? window : globalThis);

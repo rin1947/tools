@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Phiếu khai nhanh ECUS</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛃</text></svg>">
-  <link rel="stylesheet" href="../../assets/theme.css?v=20261026a">
-  <link rel="stylesheet" href="style.css?v=20261026a">
+  <link rel="stylesheet" href="../../assets/theme.css?v=20261027a">
+  <link rel="stylesheet" href="style.css?v=20261027a">
 </head>
 <body>
   <main class="page">
@@ -16,15 +16,18 @@
         <div style="font-size:56px">🛃</div>
         <div>
           <h1>Phiếu khai nhanh ECUS <span class="badge beta">bản nháp 26/10</span></h1>
-          <p>Thả Bill, Invoice, Packing List, C/O vào → tool đọc số liệu, kiểm tra chéo, tra mã HS và thuế suất từ biểu thuế của Landed Cost → copy từng ô sang ECUS và xuất <b>file danh sách hàng (.xls)</b> để import vào ECUS5.</p>
+          <p>Thả hợp đồng, Bill, Invoice, Packing List, C/O vào → tool đọc số liệu (cả bản scan), kiểm tra chéo, lấy mã HS từ Landed Cost, soạn <b>tem phụ tiếng Việt</b> → copy từng ô sang ECUS và xuất <b>file danh sách hàng (.xls)</b> để import vào ECUS5.</p>
         </div>
         <span id="bamboo"></span>
       </section>
 
       <div class="toolbar no-print">
         <button class="btn btn-pink btn-sm" id="btnNew">✨ Lô mới</button>
-        <label class="btn btn-primary btn-sm file-btn">📄 Nạp chứng từ (PDF)
-          <input type="file" id="fileDocs" accept="application/pdf,.pdf" multiple hidden>
+        <label class="btn btn-primary btn-sm file-btn">📄 Nạp chứng từ
+          <input type="file" id="fileDocs" accept=".pdf,.docx,.doc,image/*" multiple hidden>
+        </label>
+        <label class="btn btn-ghost btn-sm file-btn">📜 Nạp hợp đồng (PDF / Word)
+          <input type="file" id="fileContract" accept=".pdf,.docx,.doc,image/*" hidden>
         </label>
         <button class="btn btn-ghost btn-sm" id="btnSample">🐼 Nạp dữ liệu mẫu</button>
         <button class="btn btn-ghost btn-sm" id="btnSettings">⚙️ Cài đặt &amp; thư viện</button>
@@ -33,8 +36,9 @@
       </div>
 
       <div class="note no-print" id="setupNote" hidden>
-        👋 Lần đầu dùng: vào <b>⚙️ Cài đặt &amp; thư viện</b> nhập nhà cung cấp (tên, địa chỉ, số hợp đồng) và mã chi cục hải quan.
-        Mô tả hàng + mã HS của từng model lưu ở thư viện, khai một lần là các lô sau tự điền.
+        👋 Lần đầu dùng: bấm <b>📜 Nạp hợp đồng</b> — tool tự tạo nhà cung cấp (tên, địa chỉ, số / ngày / hạn hợp đồng).
+        Vào <b>⚙️ Cài đặt &amp; thư viện</b> nhập mã chi cục hải quan và tên, địa chỉ nhà nhập khẩu in trên tem phụ.
+        Mã HS, tem phụ, mô tả của từng model lưu ở thư viện, làm một lần là các lô sau tự điền.
         Tất cả <b>chỉ lưu trên trình duyệt máy này</b>, không đưa lên mạng.
       </div>
 
@@ -45,13 +49,16 @@
         <h3 class="sub-title">Thông số khai chung</h3>
         <div class="form-grid" id="genForm"></div>
 
+        <h3 class="sub-title">Tem phụ</h3>
+        <div class="form-grid" id="temGenForm"></div>
+
         <h3 class="sub-title">Nhà cung cấp (người xuất khẩu)
-          <span class="hint" tabindex="0" data-tip="Từ khoá nhận diện: chữ có trên Invoice của NCC này (vd một từ trong tên). Nạp Invoice có từ khoá đó thì tool tự chọn NCC.">?</span></h3>
+          <span class="hint" tabindex="0" data-tip="Nạp hợp đồng là tool tự tạo / cập nhật. Từ khoá nhận diện: chữ có trên Invoice của NCC này — nạp Invoice có từ khoá đó thì tool tự chọn NCC.">?</span></h3>
         <div id="supList" class="sup-list"></div>
         <button class="btn btn-pink btn-sm" id="btnAddSup">＋ Thêm nhà cung cấp</button>
 
         <h3 class="sub-title">Thư viện model
-          <span class="hint" tabindex="0" data-tip="Mỗi model: mã HS 8 số + mô tả khai hải quan + ĐVT. Thuế suất tự lấy từ biểu thuế của tool Landed Cost.">?</span></h3>
+          <span class="hint" tabindex="0" data-tip="Mỗi model: mã HS 8 số, ĐVT, tem phụ (sửa ở mục 4). Mô tả khai hải quan tạo từ tem phụ. Thuế suất lấy từ biểu thuế của tool Landed Cost.">?</span></h3>
         <div class="toolbar">
           <button class="btn btn-pink btn-sm" id="btnAddModel">＋ Thêm model</button>
           <button class="btn btn-ghost btn-sm" id="btnFromLC">🚢 Lấy model từ Landed Cost</button>
@@ -59,7 +66,7 @@
         </div>
         <div class="table-wrap">
           <table class="edit-table">
-            <thead><tr><th>Model</th><th>Mã HS</th><th>Mô tả khai hải quan</th><th>ĐVT</th><th>Biểu thuế</th><th></th></tr></thead>
+            <thead><tr><th>Model</th><th>Mã HS</th><th>Mô tả khai hải quan</th><th>ĐVT</th><th>Biểu thuế NK</th><th></th></tr></thead>
             <tbody id="modelBody"></tbody>
           </table>
         </div>
@@ -82,8 +89,8 @@
         <div class="dropzone" id="dropzone">
           <span class="dz-icon">📥</span>
           <div>
-            <b>Kéo thả PDF vào đây</b> hoặc <label class="link file-btn" for="fileDocs">chọn file</label><br>
-            <span class="help-text">Bill, Commercial Invoice, Packing List, C/O (PDF có chữ). Tool tự nhận loại chứng từ, file chỉ đọc trên máy.</span>
+            <b>Kéo thả file vào đây</b> hoặc <label class="link file-btn" for="fileDocs">chọn file</label><br>
+            <span class="help-text">Hợp đồng, Bill, Commercial Invoice, Packing List, C/O — PDF, bản scan / ảnh chụp, Word (.docx). Tool tự nhận loại chứng từ. Bản scan đọc bằng nhận dạng chữ ngay trên máy (lần đầu tải bộ đọc chữ ~3 MB), file không gửi đi đâu.</span>
           </div>
         </div>
         <div class="docs" id="docs"></div>
@@ -141,7 +148,7 @@
       <!-- ===================== 3. DÒNG HÀNG ===================== -->
       <section class="card">
         <h2 class="section-title"><span class="num">3</span> Danh sách hàng</h2>
-        <p class="help-text">Mô tả và mã HS lấy từ thư viện model. Thuế suất NK tự chọn ACFTA khi có C/O Form E, MFN khi không có — theo biểu thuế của tool Landed Cost.</p>
+        <p class="help-text">Mã HS lấy từ sản phẩm cùng model trong <b>Landed Cost</b>; bấm vào ô Mã HS để tra thêm (sản phẩm Landed Cost + biểu thuế). Mô tả tạo từ tem phụ ở mục 4. Thuế NK tự chọn ACFTA khi có C/O Form E, MFN khi không có.</p>
         <div class="table-wrap">
           <table class="edit-table line-table">
             <thead><tr><th>#</th><th>Model</th><th>Mô tả khai hải quan</th><th>Mã HS</th><th class="num">Số lượng</th><th>ĐVT</th><th class="num">Đơn giá</th><th class="num">Trị giá</th><th class="num">NK %</th><th class="num">VAT %</th><th></th></tr></thead>
@@ -150,19 +157,28 @@
         </div>
         <div class="toolbar" style="margin-top:10px">
           <button class="btn btn-pink btn-sm" id="btnAddLine">＋ Thêm dòng (vd hàng F.O.C)</button>
+          <button class="btn btn-ghost btn-sm" id="btnLcHs">🚢 Lấy HS từ Landed Cost</button>
           <span class="help-text" id="tariffInfo"></span>
         </div>
+        <div class="hs-panel" id="hsPanel" hidden></div>
+      </section>
+
+      <!-- ===================== 4. TEM PHỤ ===================== -->
+      <section class="card">
+        <h2 class="section-title"><span class="num">4</span> Tem phụ &amp; mô tả hàng</h2>
+        <p class="help-text no-print">Tool tự dịch tên hàng, tên + địa chỉ nhà sản xuất sang tiếng Việt và điền sẵn từ Landed Cost, hợp đồng, Packing List. Ô ghi <span class="auto-tag">tự động</span> là chưa sửa tay. Tên riêng (tên hiệu, tên đường) không dịch được thì sửa tay một lần, tool nhớ cho các lô sau.</p>
+        <div id="temList" class="tem-list"></div>
       </section>
 
       <!-- ===================== 4. KIỂM TRA ===================== -->
       <section class="card">
-        <h2 class="section-title"><span class="num">4</span> Kiểm tra chéo</h2>
+        <h2 class="section-title"><span class="num">5</span> Kiểm tra chéo</h2>
         <ul class="checks" id="checks"></ul>
       </section>
 
       <!-- ===================== 5. PHIẾU KHAI ===================== -->
       <section class="card">
-        <h2 class="section-title"><span class="num">5</span> Phiếu khai theo ECUS</h2>
+        <h2 class="section-title"><span class="num">6</span> Phiếu khai theo ECUS</h2>
         <p class="help-text">Bấm vào ô giá trị để copy rồi dán vào đúng ô trên ECUS. Số copy dạng thô, không dấu phân cách. Danh sách hàng: dùng nút <b>📗 Xuất DS hàng ECUS</b> rồi import vào ECUS5.</p>
         <div class="seg" role="tablist" id="tabs">
           <button role="tab" aria-selected="true" data-tab="t1">Thông tin chung</button>
@@ -174,15 +190,16 @@
 
       <!-- ===================== 6. THUẾ ===================== -->
       <section class="card">
-        <h2 class="section-title"><span class="num">6</span> Ước tính thuế để đối chiếu</h2>
+        <h2 class="section-title"><span class="num">7</span> Ước tính thuế để đối chiếu</h2>
         <p class="help-text">Trị giá tính thuế = trị giá hoá đơn × tỷ giá + phí vận chuyển + phí bảo hiểm (FOB / EXW / FCA), phân bổ theo trị giá từng dòng. Dùng để so với số ECUS trả về.</p>
         <div class="kpis" id="kpis"></div>
       </section>
     </div>
   </main>
 
-  <script src="../../assets/common.js?v=20261026a"></script>
-  <script src="parsers.js?v=20261026a"></script>
-  <script src="app.js?v=20261026a"></script>
+  <script src="../../assets/common.js?v=20261027a"></script>
+  <script src="parsers.js?v=20261027a"></script>
+  <script src="translate.js?v=20261027a"></script>
+  <script src="app.js?v=20261027a"></script>
 </body>
 </html>

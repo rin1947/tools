@@ -38,10 +38,10 @@ window.TOOLS = [
     id: 'customs-entry',
     name: 'Phiếu khai nhanh ECUS',
     icon: '🛃',
-    description: 'Thả Bill, Invoice, PL, C/O → kiểm tra chéo, tra HS + thuế từ Landed Cost, copy từng ô sang ECUS, xuất danh sách hàng .xls để import ECUS5.',
+    description: 'Thả hợp đồng, Bill, Invoice, PL, C/O → kiểm tra chéo, HS từ Landed Cost, tem phụ tiếng Việt, copy sang ECUS, xuất DS hàng .xls cho ECUS5.',
     path: 'tools/customs-entry/index.html',
     status: 'beta',
     category: 'Nhập khẩu',
-    updated: '2026-10-26',
+    updated: '2026-10-27',
   },
 ];
