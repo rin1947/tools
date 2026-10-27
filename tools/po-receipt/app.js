@@ -115,10 +115,19 @@
     return { id: uid(), model: m, code: c.code || codeOf(m), name: c.name || extra.desc || '', unit: S.unit,
       cbm: c.cbm > 0 ? c.cbm : '', price: c.price > 0 ? c.price : '', priceFrom: c.price > 0 ? 'cat' : '', vat: '', qty: '', split: {} };
   }
+  /* Điền các ô CÒN TRỐNG của dòng hàng từ danh mục (không ghi đè ô đã có / đã sửa tay) */
+  function fillFromCatalog(it) {
+    const c = catFind(it.model); if (!c) return false;
+    let ch = false;
+    if (!(parseNum(it.cbm) > 0) && c.cbm > 0) { it.cbm = c.cbm; ch = true; }
+    if (!String(it.name || '').trim() && c.name) { it.name = c.name; ch = true; }
+    if (c.code && (!it.code || up(it.code) === up(it.model) || up(it.code) === codeOf(it.model)) && up(it.code) !== up(c.code)) { it.code = c.code; ch = true; }
+    return ch;
+  }
   function itemFor(model, desc) {
     const m = up(model);
     let it = st.items.find((x) => x.model === m);
-    if (!it) { it = newItem(m, { desc }); st.items.push(it); }
+    if (!it) { it = newItem(m, { desc }); st.items.push(it); } else fillFromCatalog(it);
     return it;
   }
   function ensureLot() { if (!st.lots.length) st.lots.push({ id: uid(), name: '', date: '', note: '', cont: '' }); }
@@ -133,7 +142,8 @@
       if (isFinite(r.qty)) {
         const oldQty = n0(parseNum(it.qty));
         it.qty = r.qty;
-        if (st.lots.length === 1 && (!existed || assigned(it) === oldQty)) it.split = { [st.lots[0].id]: r.qty };
+        // chỉ có 1 đợt: hàng mới, hàng chưa xếp đợt nào, hoặc đang xếp đủ SL cũ → xếp đủ SL mới vào đợt đó
+        if (st.lots.length === 1 && (!existed || assigned(it) === 0 || assigned(it) === oldQty)) it.split = { [st.lots[0].id]: r.qty };
       }
       if (isFinite(r.price) && r.price > 0) { it.price = r.price; it.priceFrom = source; }
       if (isFinite(r.vat)) it.vat = r.vat;
@@ -244,6 +254,7 @@
     const out = [];
     if (!S.company) out.push(['warn', 'Chưa nhập tên công ty ở ⚙️ Cài đặt (đầu phiếu nhập kho sẽ trống).']);
     if (!st.poNo) out.push(['bad', 'Chưa nhập Số PO.']);
+    if (!Object.keys(CAT).length) out.push(['warn', 'Danh mục hàng trên máy này đang trống → tool chưa có số khối / tên hàng để tự điền. Vào 📚 Danh mục hàng, nạp file data sản phẩm (list Bosch) — chỉ cần làm 1 lần.']);
     if (!S.prefix && st.items.some((it) => it.model && up(it.code) === up(it.model)))
       out.push(['bad', 'Chưa đặt tiền tố mã hàng (vd ABC-) → mã hàng MISA đang bằng model. Vào 📚 Danh mục hàng hoặc ⚙️ Cài đặt để nhập, tool tự sửa mã.']);
     if (!supOf()) out.push(['warn', 'Chưa chọn nhà cung cấp (file MISA sẽ thiếu mã NCC).']);
@@ -668,8 +679,10 @@
     try {
       const d = JSON.parse(await f.text());
       if (d.app !== 'po-receipt') throw new Error('File sao lưu không đúng tool này');
-      if (!confirm('Khôi phục sẽ thay cài đặt, danh mục và các PO trên máy này. Tiếp tục?')) return;
-      S = { ...DEF_SET, ...d.settings }; CAT = d.catalog || {}; HIS = d.history || {}; st = { ...blank(), ...(d.current || {}) };
+      if (!confirm('Nạp bản sao lưu: cài đặt lấy theo file, danh mục hàng và các PO đã làm được GỘP vào dữ liệu đang có trên máy này. Tiếp tục?')) return;
+      S = { ...DEF_SET, ...S, ...(d.settings || {}) }; CAT = { ...CAT, ...(d.catalog || {}) }; HIS = { ...HIS, ...(d.history || {}) };
+      if (d.current && (d.current.items || []).length) { save(); st = { ...blank(), ...d.current }; }
+      st.items.forEach(fillFromCatalog);
       saveSet(); saveCat(); store.set(K.his, HIS); renderSettings(); renderAll(); renderCatalog(); toast('Đã khôi phục 🐼');
     } catch (err) { toast(err.message); }
     e.target.value = '';
@@ -759,5 +772,6 @@
   $('btnCloseCatalog').onclick = () => { $('catalogCard').hidden = true; renderAll(); };
 
   if (!S.suppliers.length || !S.company) renderSettings();
+  st.items.forEach(fillFromCatalog);
   renderAll();
 })();
