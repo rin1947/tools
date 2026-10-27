@@ -175,9 +175,29 @@
       if (!model) { if (tri.p >= 1000) warnings.push(`Dòng có SL ${tri.q} × ${tri.p} nhưng không tìm thấy mã hàng`); return; }
       const after = toks.slice(valid[tri.i + 2].i + 1).map((t) => t.s);
       const vt = after.find((s) => /^\d{1,2}([.,]\d+)?%$/.test(s));
-      rows.push({ model, desc: '', qty: tri.q, price: tri.p, delivered: NaN, unconfirmed: NaN, date: '', vat: vt ? num(vt.replace('%', '')) : NaN });
+      rows.push({ model, desc: describe(lines, li, ln, toks, valid[tri.i].i, model), qty: tri.q, price: tri.p, delivered: NaN, unconfirmed: NaN, date: '', vat: vt ? num(vt.replace('%', '')) : NaN });
     });
     return { rows, warnings };
+  }
+
+  /* Tên hàng trên hoá đơn: cột mô tả nằm giữa cột mã và cột ĐVT/SL, có thể xuống nhiều dòng.
+     Lấy chữ ở các dòng sát trên/dưới (không phải dòng hàng khác) từ mép trái cột mô tả tới trước ĐVT. */
+  function describe(lines, li, ln, toks, qIdx, model) {
+    const isItemLine = (l) => !!findTriple(l.toks.flatMap((t) => String(t.s).split(/\s+/)).map(num).filter((n) => isFinite(n)));
+    let right = toks[qIdx].x;
+    const unit = toks[qIdx - 1];
+    if (unit && /^[\p{L}]{1,8}$/u.test(unit.s) && !looksModel(unit.s)) right = unit.x;      // CHIẾC, Cái, Bộ…
+    const near = lines.filter((l, j) => j !== li && Math.abs(j - li) <= 3 && Math.abs(l.y - ln.y) <= (ln.h || 10) * 2.6 && !isItemLine(l));
+    const frag = (t) => { const u = String(t.s).trim().toUpperCase(); return u.length <= 1 || (model.startsWith(u) || model.endsWith(u)) || isFinite(num(u)); };
+    const side = near.flatMap((l) => l.toks).filter((t) => t.x < right && !frag(t));
+    if (!side.length) return '';
+    const left = Math.min(...side.map((t) => t.x)) - 1;
+    const parts = [...near, ln].sort((a, b) => b.y - a.y)
+      .map((l) => l.toks.filter((t) => t.x >= left && t.x < right && !(l !== ln && frag(t))).map((t) => String(t.s).trim()).join(' '))
+      .filter(Boolean);
+    let d = parts.join(' ').replace(/\s+/g, ' ').trim();
+    d = d.replace(/\s*\([^()]*\)\s*$/, '').trim();                       // bỏ phần tiếng Anh trong ngoặc ở cuối
+    return d.length >= 6 && /\p{L}{3,}/u.test(d) ? d : '';
   }
 
   /* ---------- Hoá đơn XML (TT78): mỗi <HHDVu> là 1 dòng ---------- */

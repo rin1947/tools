@@ -137,6 +137,7 @@
       }
       if (isFinite(r.price) && r.price > 0) { it.price = r.price; it.priceFrom = source; }
       if (isFinite(r.vat)) it.vat = r.vat;
+      if (!String(it.name || '').trim() && r.desc) it.name = String(r.desc).replace(/\s*\([^()]*\)\s*$/, '').trim();
       existed ? upd++ : add++;
     });
     return { add, upd };
@@ -243,6 +244,8 @@
     const out = [];
     if (!S.company) out.push(['warn', 'Chưa nhập tên công ty ở ⚙️ Cài đặt (đầu phiếu nhập kho sẽ trống).']);
     if (!st.poNo) out.push(['bad', 'Chưa nhập Số PO.']);
+    if (!S.prefix && st.items.some((it) => it.model && up(it.code) === up(it.model)))
+      out.push(['bad', 'Chưa đặt tiền tố mã hàng (vd ABC-) → mã hàng MISA đang bằng model. Vào 📚 Danh mục hàng hoặc ⚙️ Cài đặt để nhập, tool tự sửa mã.']);
     if (!supOf()) out.push(['warn', 'Chưa chọn nhà cung cấp (file MISA sẽ thiếu mã NCC).']);
     st.items.forEach((it) => {
       const r = rest(it); const nm = it.model || '(chưa có model)';
@@ -581,7 +584,13 @@
         }));
       }
       const aoa = X.misaAoa({ poDate: st.poDate, supplier: supOf(), currency: S.currency, lines });
-      XLSX.writeFile(X.misaWorkbook(XLSX, aoa), `${GauBep.today()}_PO_${safe(st.poNo)}_NHAP_DON_MUA_HANG.xls`, { bookType: 'biff8' });
+      // sheet "Danh sách hàng hoá" như mẫu MISA: các mã MISA trong danh mục + mã của PO này
+      const list = new Map();
+      Object.values(CAT).filter((v) => v.misa && v.code).forEach((v) => list.set(up(v.code), { code: v.code, name: v.name }));
+      st.items.forEach((it) => { if (it.code && !list.has(up(it.code))) list.set(up(it.code), { code: it.code, name: it.name }); });
+      const catalog = [...list.values()].sort((a, b) => a.code.localeCompare(b.code));
+      const bytes = XlsWriter.build(XLSX.CFB, X.misaBook(aoa, catalog));
+      download(new Blob([bytes], { type: 'application/vnd.ms-excel' }), `${GauBep.today()}_PO_${safe(st.poNo)}_NHAP_DON_MUA_HANG.xls`);
       learnAll(); save(); toast('Đã xuất file nhập MISA 🎉');
     } catch (err) { toast(err.message); }
   };
@@ -624,7 +633,8 @@
       <td><input class="w-md" data-wk="name" value="${esc(w.name)}"></td><td><input class="w-xs" data-wk="short" value="${esc(w.short)}"></td>
       <td><input class="w-sm" data-wk="misa" value="${esc(w.misa)}"></td><td><button class="btn-x" data-del-wh="${w.id}">✕</button></td></tr>`).join('');
   }
-  ['company', 'dept', 'prefix', 'unit', 'currency'].forEach((k) => $('set_' + k).addEventListener('input', () => { S[k] = $('set_' + k).value; saveSet(); }));
+  ['company', 'dept', 'unit', 'currency'].forEach((k) => $('set_' + k).addEventListener('input', () => { S[k] = $('set_' + k).value; saveSet(); }));
+  $('set_prefix').addEventListener('change', () => { setPrefix($('set_prefix').value); renderAll(); });
   $('set_vat').addEventListener('input', () => { S.vat = parseNum($('set_vat').value); saveSet(); });
   $('set_noSuffix').onchange = () => { S.noSuffix = $('set_noSuffix').checked; saveSet(); renderAll(); };
   $('supplierBody').addEventListener('input', (e) => {
@@ -681,7 +691,11 @@
       || `<tr><td colspan="8" class="muted">Chưa có mã nào — nạp file data sản phẩm.</td></tr>`;
   }
   $('catSearch').addEventListener('input', renderCatalog);
-  $('cat_prefix').addEventListener('input', () => { S.prefix = $('cat_prefix').value.trim(); saveSet(); });
+  function setPrefix(v) {
+    const old = up(S.prefix); S.prefix = String(v || '').trim(); saveSet();
+    st.items.forEach((it) => { if (it.model && (up(it.code) === up(it.model) || up(it.code) === old + up(it.model))) it.code = codeOf(it.model); });
+  }
+  $('cat_prefix').addEventListener('change', () => { setPrefix($('cat_prefix').value); renderAll(); });
   $('catBody').addEventListener('input', (e) => {
     const tr = e.target.closest('tr[data-m]'); const k = e.target.dataset.ck; if (!tr || !k) return;
     CAT[tr.dataset.m][k] = k === 'cbm' ? parseNum(e.target.value) : e.target.value.trim(); saveCat();
@@ -696,7 +710,7 @@
     const cnt = {};
     rows.filter((r) => r.kind === 'misa').forEach((r) => { const m = r.code.match(/^([A-Z]{2,8}-)[A-Z0-9]/); if (m) cnt[m[1]] = (cnt[m[1]] || 0) + 1; });
     const best = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0];
-    if (best && best[1] >= rows.length * 0.5) { S.prefix = best[0]; saveSet(); renderSettings(); toast(`Đã nhận tiền tố mã hàng "${best[0]}" (sửa ở ⚙️ Cài đặt nếu sai)`); }
+    if (best && best[1] >= rows.length * 0.5) { setPrefix(best[0]); renderSettings(); toast(`Đã nhận tiền tố mã hàng "${best[0]}" (sửa ở ⚙️ Cài đặt nếu sai)`); }
   }
   /* Nạp / cập nhật danh mục:
      - File data sản phẩm NCC (cột Model, Tên sản phẩm, CBM…): bản mới nhất quyết định SỐ KHỐI (ghi đè);

@@ -125,8 +125,9 @@ Phát triển riêng bởi người dùng, đã tách thành:
 |---|---|
 | `index.html` | Giao diện: Cài đặt, Danh mục hàng, 1 Thông tin PO, 2 Hàng hoá & chia đợt, 3 Kiểm tra, PO đã làm |
 | `app.js` | Trạng thái PO (đợt, dòng hàng, SL từng đợt), dán bảng, nạp PDF/XML, mở phiếu cũ, xuất file |
-| `parsers.js` | Đọc bảng dán (email lịch giao / Excel PO), PDF có chữ (tìm bộ SL × Đơn giá = Thành tiền), hoá đơn XML, mở lại phiếu nhập kho / file MISA, danh mục hàng. Chạy được bằng Node để kiểm thử |
-| `export.js` | Phiếu đề nghị nhập kho (ExcelJS, đúng khuôn phiếu gốc) và file nhập đơn mua hàng MISA 28 cột (SheetJS, ghi `.xls` biff8) |
+| `parsers.js` | Đọc hoá đơn PDF lấy cả **tên hàng** (cột mô tả nhiều dòng, bỏ phần tiếng Anh trong ngoặc). Đọc bảng dán (email lịch giao / Excel PO), PDF có chữ (tìm bộ SL × Đơn giá = Thành tiền), hoá đơn XML, mở lại phiếu nhập kho / file MISA, danh mục hàng. Chạy được bằng Node để kiểm thử |
+| `export.js` | Phiếu đề nghị nhập kho (ExcelJS, đúng khuôn phiếu gốc) và mô tả file nhập đơn mua hàng MISA 28 cột + sheet "Danh sách hàng hoá" (font, màu nền, khung, độ cao dòng đo từ mẫu MISA gốc) |
+| `xls-writer.js` | Bộ ghi `.xls` (BIFF8) **có định dạng** tự viết — SheetJS miễn phí ghi .xls bị mất định dạng. Đóng gói bằng `XLSX.CFB`. Kiểm thử: đọc lại bằng xlrd / SheetJS / LibreOffice |
 
 - **Tên lô = Số đơn hàng MISA** = `<Số PO> <viết tắt kho> đợt <n>` (bỏ " đợt 1" khi PO chỉ 1 đợt, tuỳ chọn). Hai file phải luôn khớp nhau.
 - **Danh mục hàng**: file data sản phẩm NCC (Model, Tên, CBM) là nguồn số khối — nạp bản mới thì **ghi đè số khối**, báo mã mới / mã đổi số khối, cập nhật PO đang làm (trừ ô đã sửa tay). Danh sách hàng hoá MISA (Mã có tiền tố, Tên) quyết định mã + tên hàng.
