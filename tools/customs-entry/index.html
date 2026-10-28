@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Phiếu khai nhanh ECUS</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛃</text></svg>">
-  <link rel="stylesheet" href="../../assets/theme.css?v=20261028a">
-  <link rel="stylesheet" href="style.css?v=20261028a">
+  <link rel="stylesheet" href="../../assets/theme.css?v=20261028b">
+  <link rel="stylesheet" href="style.css?v=20261028b">
 </head>
 <body>
   <main class="page">
@@ -23,12 +23,6 @@
 
       <div class="toolbar no-print">
         <button class="btn btn-pink btn-sm" id="btnNew">✨ Lô mới</button>
-        <label class="btn btn-primary btn-sm file-btn">📄 Nạp chứng từ
-          <input type="file" id="fileDocs" accept=".pdf,.docx,.doc,.xml,image/*" multiple hidden>
-        </label>
-        <label class="btn btn-ghost btn-sm file-btn">📜 Nạp hợp đồng (PDF / Word)
-          <input type="file" id="fileContract" accept=".pdf,.docx,.doc,image/*" hidden>
-        </label>
         <button class="btn btn-ghost btn-sm" id="btnSample">🐼 Nạp dữ liệu mẫu</button>
         <button class="btn btn-ghost btn-sm" id="btnSettings">⚙️ Cài đặt &amp; thư viện</button>
         <span style="flex:1"></span>
@@ -36,7 +30,7 @@
       </div>
 
       <div class="note no-print" id="setupNote" hidden>
-        👋 Lần đầu dùng: bấm <b>📜 Nạp hợp đồng</b> — tool tự tạo nhà cung cấp (tên, địa chỉ, số / ngày / hạn hợp đồng).
+        👋 Lần đầu dùng: nạp file vào ô <b>Hợp đồng</b> ở mục 1 — tool tự tạo nhà cung cấp (tên, địa chỉ, số / ngày / hạn hợp đồng).
         Vào <b>⚙️ Cài đặt &amp; thư viện</b> nhập mã chi cục hải quan và tên, địa chỉ nhà nhập khẩu in trên tem phụ.
         Mã HS, tem phụ, mô tả của từng model lưu ở thư viện, làm một lần là các lô sau tự điền.
         Tất cả <b>chỉ lưu trên trình duyệt máy này</b>, không đưa lên mạng.
@@ -86,13 +80,7 @@
       <!-- ===================== 1. CHỨNG TỪ ===================== -->
       <section class="card">
         <h2 class="section-title"><span class="num">1</span> Chứng từ</h2>
-        <div class="dropzone" id="dropzone">
-          <span class="dz-icon">📥</span>
-          <div>
-            <b>Kéo thả file vào đây</b> hoặc <label class="link file-btn" for="fileDocs">chọn file</label><br>
-            <span class="help-text">Hợp đồng, Bill, Commercial Invoice, Packing List, C/O, <b>Arrival Notice, hoá đơn cước, hoá đơn bảo hiểm</b> (hoá đơn điện tử PDF / XML hoặc debit note) — PDF, bản scan / ảnh chụp, Word (.docx). Nạp nhiều file cùng lúc được. Tool tự nhận loại chứng từ. Bản scan đọc bằng nhận dạng chữ ngay trên máy (lần đầu tải bộ đọc chữ ~3 MB), file không gửi đi đâu.</span>
-          </div>
-        </div>
+        <p class="help-text">Kéo thả từng file vào <b>đúng ô</b> (hoặc bấm 📂 Chọn file). Nạp nhầm thì bấm 🗑 Xoá — các ô tool đã điền từ file đó trả về như cũ. Invoice / Packing List khác mẫu thì nạp <b>file Excel</b> cũng được. Bản scan đọc bằng nhận dạng chữ ngay trên máy (lần đầu tải bộ đọc chữ ~3 MB), file không gửi đi đâu.</p>
         <div class="docs" id="docs"></div>
         <div class="form-grid" style="margin-top:14px">
           <div class="field"><label>Nhà cung cấp</label><select id="supSel"></select></div>
@@ -208,9 +196,9 @@
     </div>
   </main>
 
-  <script src="../../assets/common.js?v=20261028a"></script>
-  <script src="parsers.js?v=20261028a"></script>
-  <script src="translate.js?v=20261028a"></script>
-  <script src="app.js?v=20261028a"></script>
+  <script src="../../assets/common.js?v=20261028b"></script>
+  <script src="parsers.js?v=20261028b"></script>
+  <script src="translate.js?v=20261028b"></script>
+  <script src="app.js?v=20261028b"></script>
 </body>
 </html>

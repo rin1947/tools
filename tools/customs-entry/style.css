@@ -135,3 +135,21 @@ input.empty { border-color: var(--pink-400); background: var(--surface-2); }
 .tem-pend span { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
 .tem-pend select { width: auto; }
 #temDrop .file-btn { margin-bottom: 4px; }
+
+/* ---------- Ô chứng từ (mỗi loại 1 ô, kéo thả được) ---------- */
+.docs { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.slot { border: 2px dashed var(--border); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; background: var(--surface); transition: background .15s, border-color .15s; }
+.slot.ok { border-style: solid; border-color: var(--bamboo-400); background: var(--accent-bg); }
+.slot.over { border-color: var(--pink-400); background: var(--pink-100); }
+.slot-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.slot-head b { font-size: 14px; }
+.slot-ic { font-size: 20px; }
+.slot-sub { font-size: 12px; color: var(--text-mute); overflow-wrap: anywhere; }
+.slot-act { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
+.fee-rows { display: grid; gap: 3px; font-size: 12px; }
+.fee-rows label { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; align-items: start; }
+.fee-rows label.off span { color: var(--text-mute); }
+.fee-rows input { width: 15px; height: 15px; accent-color: var(--accent); margin-top: 1px; }
+.fee-rows b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fee-sum { border-top: 1px dashed var(--border); padding-top: 4px; }
+.slot-warn { font-size: 12px; font-weight: 800; color: var(--danger); }

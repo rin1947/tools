@@ -79,7 +79,8 @@
     IN: 'Ấn Độ', SG: 'Singapore', PH: 'Philippines', DE: 'Đức', IT: 'Ý', FR: 'Pháp', US: 'Hoa Kỳ', GB: 'Anh' };
 
   const clean = (s) => String(s || '').replace(/[“”"]/g, '').replace(/\s+/g, ' ').trim();
-  const low = (s) => clean(s).toLowerCase().replace(/[^a-z0-9&' ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  // giữ dấu chấm / phẩy trong số (1.7L, 2,5kg)
+  const low = (s) => clean(s).toLowerCase().replace(/(\d)[.,](\d)/g, '$1§$2').replace(/[^a-z0-9&' §]+/g, ' ').replace(/§/g, '.').replace(/\s+/g, ' ').trim();
   const cap = (s) => s.replace(/(^|\s)(\S)/g, (m, a, b) => a + b.toUpperCase());
   const placeMap = new Map(PLACES.map((p) => [p[0], p]));
   const LEVEL = { p: 'Tỉnh', c: 'Thành phố', d: 'Quận', t: 'Trấn' };
@@ -106,8 +107,11 @@
     if (!t) return { vi: '', unknown: [] };
     const pcs = phrasePieces(t, PRODUCT);
     const vi = pcs.filter((p) => p.vi).map((p) => p.vi);
-    const unknown = pcs.filter((p) => p.raw).map((p) => p.raw);
-    const s = (vi.join(' ') + (unknown.length ? ' ' + unknown.join(' ') : '')).trim();
+    // thông số có số (1.7L, 40W) giữ nguyên chữ hoa như bản gốc, không tính là chưa dịch
+    const orig = (w) => { const m = String(name).match(new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')); return m ? m[0] : w; };
+    const raws = pcs.filter((p) => p.raw).map((p) => p.raw.split(' ').map((w) => (/\d/.test(w) ? orig(w).toUpperCase() : w)).join(' '));
+    const unknown = raws.map((r) => r.split(' ').filter((w) => !/\d/.test(w)).join(' ')).filter(Boolean);
+    const s = (vi.join(' ') + (raws.length ? ' ' + raws.join(' ') : '')).trim();
     const k = vi.join(' ');
     return { vi: s.charAt(0).toUpperCase() + s.slice(1), known: k.charAt(0).toUpperCase() + k.slice(1), unknown };
   }
@@ -251,7 +255,7 @@
     MATS.slice().sort((a, b) => b[0].length - a[0].length).forEach(([en2, vi]) => {
       const re = new RegExp('(^| )' + en2 + '( |$)', 'g'); if (re.test(tl)) { if (!mats.includes(vi)) mats.push(vi); tl = tl.replace(re, ' ').replace(/\s+/g, ' ').trim(); }
     });
-    tl = tl.replace(/\b(made|material|new|pcs|pc|set|sets|unit|units|and|with)\b/g, (w) => (w === 'and' ? ',' : w === 'with' ? ' / ' : ' ')).replace(/\b[a-z]*\d[a-z0-9\-]*\b/g, ' ');
+    tl = tl.replace(/\b(made|material|new|pcs|pc|set|sets|unit|units|spare|replacement|and|with)\b/g, (w) => (w === 'and' ? ',' : w === 'with' ? ' / ' : ' ')).replace(/\b[a-z]*\d[a-z0-9\-]*\b/g, ' ');
     // "a with b" → "a kèm b"; "a and b" / "a, b" → "a và b"
     const withParts = tl.split(/\s*\/\s*/);
     const segs = withParts.length > 1 ? null : tl.split(/\s*[,&]\s*/).map((x) => x.trim()).filter(Boolean);

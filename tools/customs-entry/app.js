@@ -71,7 +71,7 @@
   S.gen = { ...DEF_GEN, ...(S.gen || {}) }; S.sups = S.sups || []; S.models = S.models || {};
   // bản cũ: model có mô tả gõ sẵn mà chưa có tem → giữ mô tả đó (coi như sửa tay)
   Object.values(S.models).forEach((m) => { if (!m.tem) { m.tem = {}; if (m.desc && m.descManual === undefined) m.descManual = true; } });
-  const newLot = () => ({ docs: {}, supId: (S.sups[0] || {}).id || '', origin: 'CN', lines: [] });
+  const newLot = () => ({ docs: {}, docSet: {}, feeDoc: {}, supId: (S.sups[0] || {}).id || '', origin: 'CN', lines: [] });
   let L = store.get(KEY_LOT, null) || newLot();
   L.docs = L.docs || {}; L.lines = L.lines || [];
   const saveSet = () => store.set(KEY_SET, S);
@@ -257,7 +257,8 @@
     t.auto = a; t.country = V.country(L.origin || 'CN');
     return t;
   }
-  const sentence = (s) => { s = String(s || '').trim(); return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(); };
+  // viết hoa chữ đầu; chỉ hạ chữ thường khi cả chuỗi đang IN HOA (giữ nguyên 1.7L, 40W…)
+  const sentence = (s) => { s = String(s || '').trim(); if (s === s.toUpperCase()) s = s.toLocaleLowerCase('vi').replace(/\S*\d\S*/g, (w) => w.toUpperCase()); return s.charAt(0).toUpperCase() + s.slice(1); };
   /* Mô tả khai hải quan tạo từ tem */
   function genDesc(code) {
     const t = temOf(code); const m = modelOf(code) || {};
@@ -427,82 +428,152 @@
   }
 
   /* ======================= NẠP CHỨNG TỪ ======================= */
-  const DOCNAME = { hd: 'Hợp đồng', bill: 'Vận đơn (Bill)', ci: 'Commercial Invoice', pl: 'Packing List', co: 'C/O', an: 'Arrival Notice', fr: 'Hoá đơn cước', bh: 'Hoá đơn bảo hiểm' };
+  /* ======================= NẠP CHỨNG TỪ — mỗi loại 1 ô riêng =======================
+     Người dùng chọn đúng ô (không tự nhận diện). Tool chỉ cảnh báo khi file trông giống loại khác.
+     Mỗi lần nạp ghi lại giá trị cũ của các ô bị đổi → nút 🗑 Xoá trả lô về như trước khi nạp. */
+  const DOC_TYPES = [
+    ['hd', '📜 Hợp đồng', '.pdf,.docx,.doc,image/*', 'PDF, Word, bản scan'],
+    ['ci', '🧾 Commercial Invoice', '.pdf,.xlsx,.xls,.csv,image/*', 'PDF hoặc Excel'],
+    ['pl', '📦 Packing List', '.pdf,.xlsx,.xls,.csv,image/*', 'PDF hoặc Excel'],
+    ['bill', '🚢 Vận đơn (Bill)', '.pdf,image/*', 'PDF, bản scan'],
+    ['co', '🏅 C/O', '.pdf,image/*', 'PDF, bản scan'],
+    ['an', '📣 Arrival Notice', '.pdf,.docx,image/*', 'PDF, Word, bản scan'],
+    ['fr', '💵 Hoá đơn cước', '.pdf,.xml,image/*', 'HĐ điện tử PDF / XML, debit note'],
+    ['bh', '🛡️ Hoá đơn bảo hiểm', '.pdf,.xml,image/*', 'HĐ điện tử PDF / XML'],
+  ];
+  const DOCNAME = Object.fromEntries(DOC_TYPES.map((d) => [d[0], d[1].replace(/^\S+\s/, '')]));
+  DOCNAME.vat = 'hoá đơn GTGT'; DOCNAME.fee = 'debit note';
+  const SLOT_OK = { fr: ['vat', 'fee'], bh: ['vat', 'fee'], an: [], hd: [] };
+  L.docSet = L.docSet || {}; L.feeDoc = L.feeDoc || {};
   let busy = false;
-  async function handleFiles(files) {
-    if (busy) { GauBep.toast('Đang đọc file trước, chờ chút…'); return; }
-    busy = true; const done = [];
-    try {
-      for (const f of files) {
-        try {
-          const { text, ocr, pages, xml } = await fileText(f);
-          const k = P.classify(text);
-          if (!k) { GauBep.toast(`${f.name}: chưa nhận ra loại chứng từ`); continue; }
-          if (L.sample) L = newLot();
-          if (k === 'hd') { if (applyContract(P.contract(text), f.name, ocr)) done.push('Hợp đồng'); continue; }
-          if (k === 'an') { applyAN(P.an(text), f.name + (ocr ? ' (đọc bản scan)' : '')); done.push('Arrival Notice'); continue; }
-          if (k === 'vat' || k === 'fee') { const r = await applyFee(k, text, pages, xml, f.name); if (r) done.push(r); continue; }
-          const res = P[k](text);
-          if (k === 'ci') {
-            if (res.lines) {
-              const partOf = (x) => V.isPartName(x.name) && !lcFind(x.code);
-              const mains = res.lines.filter((x) => x.code && !partOf(x)).map((x) => x.code);
-              L.lines = res.lines.map((x) => {
-                const base = { id: uid(), code: x.code, qty: x.qty, price: x.price, invAmount: x.amount, unit: UNIT_MAP[x.unit] || 'PCE' };
-                const isP = partOf(x); const tr = isP ? V.part(x.name) : null;
-                if (x.code) {
-                  const fresh = !modelOf(x.code); const m = ensureModel(x.code, x.name);
-                  if (fresh && isP) Object.assign(m, { part: true, foc: tr.foc, parent: guessParent(x.code, x.name, mains) });
-                  return base;
-                }
-                return Object.assign(base, { en: x.name, desc: isP ? '' : x.name, part: isP, foc: isP ? tr.foc : false, parent: isP ? guessParent('', x.name, mains) : '', hs: '' });
-              });
-              fillPartHS();
-            }
-            delete res.lines;
-            const hit = S.sups.find((s) => s.key && normKey(text).includes(normKey(s.key)));
-            if (hit) L.supId = hit.id;
-          }
-          Object.entries(res).forEach(([kk, v]) => { if (has(v)) L[kk] = v; });
-          L.docs[k] = f.name + (ocr ? ' (đọc bản scan)' : ''); done.push(DOCNAME[k]);
-        } catch (e) { GauBep.toast(`${f.name}: ${e.message || 'lỗi đọc file'}`); }
+  const isSheet = (f) => /\.(xlsx|xls|csv)$/i.test(f.name);
+  async function readSheet(f) {
+    if (!window.XLSX) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+    const wb = window.XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    return P.sheetRows(window.XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' }));
+  }
+  /* Dòng Invoice → dòng hàng (tự nhận linh kiện) */
+  function linesFromInvoice(list) {
+    const partOf = (x) => V.isPartName(x.name) && !lcFind(x.code);
+    const mains = list.filter((x) => x.code && !partOf(x)).map((x) => x.code);
+    const out = list.map((x) => {
+      const amount = has(x.amount) && x.amount > 0 ? x.amount : Math.round(x.qty * x.price * 100) / 100;
+      const base = { id: uid(), code: String(x.code || '').toUpperCase(), qty: x.qty, price: x.price, invAmount: amount, unit: UNIT_MAP[String(x.unit || '').toUpperCase()] || 'PCE' };
+      const isP = partOf(x); const tr = isP ? V.part(x.name) : null;
+      if (base.code) {
+        const fresh = !modelOf(base.code); const m = ensureModel(base.code, x.name);
+        if (fresh && isP) Object.assign(m, { part: true, foc: tr.foc, parent: guessParent(base.code, x.name, mains) });
+        return base;
       }
-    } finally { busy = false; }
-    L.lines.forEach((l) => { const m = modelOf(l.code); if (m && !m.supId) m.supId = L.supId; });
-    saveSet(); saveLot(); renderAll();
-    if (done.length) GauBep.toast('Đã đọc: ' + done.join(', ') + ' 🐼');
+      return Object.assign(base, { en: x.name, desc: isP ? '' : x.name, part: isP, foc: isP ? tr.foc : false, parent: isP ? guessParent('', x.name, mains) : '', hs: '' });
+    });
+    return out;
   }
-  /* Arrival Notice → ngày hàng đến, mã địa điểm lưu kho, cước O/F (nếu có) để đối chiếu */
-  function applyAN(a, fname) {
-    if (a.arrival) L.arrival = a.arrival;
-    if (a.storeCode) L.storeCode = a.storeCode;
-    if (!L.pod && a.anPod) L.pod = 'HO CHI MINH(' + a.anPod + ')';
-    Object.assign(L, { anBl: a.anBl || '', anVessel: a.anVessel || '', anFreightUsd: a.anFreightUsd || '' });
-    L.docs.an = fname;
+  /* Đọc 1 file vào đúng ô k → trả về object các trường của lô (hoặc null nếu không đọc được gì) */
+  async function readSlot(k, f) {
+    if (isSheet(f)) {
+      if (k !== 'ci' && k !== 'pl') throw new Error('loại chứng từ này chưa đọc được từ Excel');
+      const { rows, meta } = await readSheet(f);
+      if (!rows.length) throw new Error('không tìm thấy dòng tiêu đề có cột Số lượng / Đơn giá / Thành tiền (hoặc G.W) trong sheet đầu');
+      if (k === 'ci') return { res: { invNo: meta.invNo, invDate: meta.invDate, invTotal: rows.reduce((a, r) => a + (r.amount || r.qty * r.price || 0), 0), lines: rows }, info: `${rows.length} dòng hàng (Excel)` };
+      const sum = (key) => { const v = rows.reduce((a, r) => a + (r[key] > 0 ? r[key] : 0), 0); return v || undefined; };
+      return { res: { plQty: sum('qty'), plPkgs: sum('pkgs'), plGw: sum('gw'), plNw: sum('nw') }, info: `${rows.length} dòng (Excel)` };
+    }
+    const { text, ocr, pages, xml } = await fileText(f);
+    const guess = P.classify(text);
+    if (guess && guess !== k && !(SLOT_OK[k] || []).includes(guess) && !(k === 'ci' && guess === 'pl') && !(k === 'pl' && guess === 'ci'))
+      slotWarn = `File này trông giống ${DOCNAME[guess] || guess} — kiểm tra lại, nạp nhầm thì bấm 🗑 Xoá`;
+    const tag = ocr ? ' (đọc bản scan)' : '';
+    if (k === 'hd') return { contract: P.contract(text), ocr, tag };
+    if (k === 'an') { const a = P.an(text); return { res: { arrival: a.arrival, storeCode: a.storeCode, anBl: a.anBl, anVessel: a.anVessel, anFreightUsd: a.anFreightUsd, pod: !L.pod && a.anPod ? 'HO CHI MINH(' + a.anPod + ')' : undefined }, tag }; }
+    if (k === 'fr' || k === 'bh') return { fee: await readFee(k, text, pages, xml, guess), tag };
+    const res = P[k](text);
+    if (k === 'ci') { delete res.plInv; }
+    return { res, tag, text };
   }
-  /* Hoá đơn cước / bảo hiểm (hoá đơn điện tử VN dạng PDF / XML, hoặc debit note tiếng Anh)
-     → chỉ cộng dòng CƯỚC QUỐC TẾ và PHÍ BẢO HIỂM (tiền trước thuế); phí local (THC, D/O, CIC…) bỏ qua */
-  async function applyFee(k, text, pages, xml, fname) {
+  /* Hoá đơn cước / bảo hiểm → các dòng phí, mỗi dòng có ô chọn (đã chọn sẵn: cước quốc tế / phí bảo hiểm) */
+  async function readFee(k, text, pages, xml, guess) {
     let rows = [];
-    if (k === 'vat') {
+    if (xml || guess === 'vat') {
       if (!window.InvoiceParser) await loadScript('../cost-payment/invoice-parser.js?v=20261028');
       const inv = xml ? window.InvoiceParser.fromXml(xml) : window.InvoiceParser.fromPdfPages(pages || []);
-      rows = (inv.lines || []).map((x) => ({ desc: x.desc, kind: P.feeKind(x.desc), vnd: x.pre }));
-    } else rows = P.feeLines(text);
-    const fr = rows.filter((r) => r.kind === 'freight'); const ins = rows.filter((r) => r.kind === 'ins');
-    const local = rows.filter((r) => r.kind === 'local');
-    if (!fr.length && !ins.length) { GauBep.toast(`${fname}: không thấy dòng cước quốc tế / phí bảo hiểm trên hoá đơn`); return ''; }
-    const setFee = (kind, list) => {
-      const usd = list.reduce((a, r) => a + (r.usd || 0), 0); const vnd = list.reduce((a, r) => a + (r.vnd || 0), 0);
-      const cur = usd && !vnd ? 'USD' : 'VND';
-      L[kind] = cur === 'USD' ? Math.round(usd * 100) / 100 : Math.round(vnd);
-      L[kind + 'Cur'] = cur;
-      L[kind + 'Doc'] = { file: fname, lines: list.map((r) => ({ desc: r.desc, amt: r.usd || r.vnd, cur: r.usd ? 'USD' : 'VND' })), local: local.map((r) => r.desc) };
-    };
-    const got = [];
-    if (fr.length) { setFee('freight', fr); L.docs.fr = fname; got.push('Hoá đơn cước'); }
-    if (ins.length) { setFee('ins', ins); L.docs.bh = fname; got.push('Hoá đơn bảo hiểm'); }
-    return got.join(', ');
+      rows = (inv.lines || []).filter((x) => x.pre).map((x) => ({ desc: x.desc, amt: x.pre, cur: 'VND' }));
+    }
+    if (!rows.length) rows = P.feeLines(text, true).map((x) => ({ desc: x.desc, amt: x.usd || x.vnd, cur: x.usd ? 'USD' : 'VND' }));
+    rows.forEach((r) => { r.kind = P.feeKind(r.desc); r.on = k === 'bh' ? r.kind !== 'local' : r.kind === 'freight'; });
+    // hoá đơn của công ty bảo hiểm: dòng ghi điều kiện (vd "Điều kiện ICC A") vẫn là phí bảo hiểm
+    if (k === 'bh' && /BẢO\s*HIỂM|INSURANCE/i.test(String(text).normalize('NFC'))) rows.forEach((r) => { r.on = true; r.kind = 'ins'; });
+    if (k === 'fr' && !rows.some((r) => r.on)) rows.forEach((r) => { if (r.kind === 'other') r.on = true; });
+    return rows;
+  }
+  function feeTotal(k) {
+    const d = L.feeDoc[k]; if (!d) return null;
+    const on = d.rows.filter((r) => r.on);
+    const usd = on.filter((r) => r.cur === 'USD').reduce((a, r) => a + r.amt, 0);
+    const vnd = on.filter((r) => r.cur !== 'USD').reduce((a, r) => a + r.amt, 0);
+    if (usd && !vnd) return { v: Math.round(usd * 100) / 100, cur: 'USD' };
+    return { v: Math.round(vnd + usd * (parseNum(L.rate) || 0)), cur: 'VND' };
+  }
+  function applyFeeTotal(k) {
+    const t = feeTotal(k); if (!t) return;
+    const key = k === 'fr' ? 'freight' : 'ins';
+    L[key] = t.v; L[key + 'Cur'] = t.cur;
+  }
+  let slotWarn = '';
+  async function handleSlot(k, files) {
+    if (busy) { GauBep.toast('Đang đọc file trước, chờ chút…'); return; }
+    const f = files[0]; if (!f) return;
+    busy = true;
+    try {
+      GauBep.toast(`🔎 Đang đọc ${DOCNAME[k]}: ${f.name}…`); slotWarn = '';
+      if (L.sample) L = newLot();
+      if (L.docs[k]) clearSlot(k, true);                        // nạp lại → bỏ dữ liệu của file cũ trước
+      const before = JSON.parse(JSON.stringify(L));
+      const supsBefore = JSON.parse(JSON.stringify(S.sups));
+      const r = await readSlot(k, f);
+      let info = '';
+      if (k === 'hd') {
+        if (!applyContract(r.contract, f.name, r.ocr)) return;
+        L.docSet.hd = { sups: supsBefore, supId: before.supId };
+      } else if (k === 'fr' || k === 'bh') {
+        if (!r.fee.length) { GauBep.toast(`${f.name}: không đọc được dòng phí nào — nhập tay ở mục 2`); return; }
+        L.feeDoc[k] = { file: f.name, rows: r.fee }; applyFeeTotal(k);
+        info = `${r.fee.filter((x) => x.on).length}/${r.fee.length} dòng được tính`;
+      } else {
+        const res = r.res || {};
+        if (k === 'ci' && res.lines) {
+          L.lines = linesFromInvoice(res.lines); fillPartHS();
+          const hit = r.text && S.sups.find((x) => x.key && normKey(r.text).includes(normKey(x.key))); if (hit) L.supId = hit.id;
+          info = `${res.lines.length} dòng hàng` + (r.info ? '' : '');
+        }
+        delete res.lines;
+        let n = 0; Object.entries(res).forEach(([kk, v]) => { if (has(v)) { L[kk] = v; n++; } });
+        if (!n && !(k === 'ci' && L.lines.length)) { GauBep.toast(`⚠️ ${f.name}: không đọc được thông tin nào — kiểm tra đúng ô chưa, hoặc nhập tay${k === 'ci' || k === 'pl' ? ' / nạp file Excel' : ''}`); }
+        if (k === 'ci' && !L.lines.length) GauBep.toast(`⚠️ ${f.name}: không đọc được dòng hàng — Invoice khác mẫu thì nạp file Excel của Invoice, hoặc thêm dòng tay ở mục 3`);
+        if (r.info) info = r.info;
+      }
+      // ghi lại giá trị cũ của các ô bị đổi (để Xoá)
+      if (k !== 'hd') {
+        const prev = {};
+        Object.keys(L).forEach((kk) => { if (['docs', 'docSet', 'feeDoc', 'lines', 'sample'].includes(kk)) return; if (JSON.stringify(L[kk]) !== JSON.stringify(before[kk])) prev[kk] = before[kk] === undefined ? null : before[kk]; });
+        L.docSet[k] = { prev, lines: k === 'ci' ? before.lines : undefined };
+      }
+      L.docs[k] = f.name + (r.tag || '') + (info ? ' · ' + info : '');
+      L.docWarn = L.docWarn || {}; if (slotWarn) L.docWarn[k] = slotWarn; else delete L.docWarn[k];
+      L.lines.forEach((l) => { const m = modelOf(l.code); if (m && !m.supId) m.supId = L.supId; });
+      GauBep.toast(slotWarn ? `⚠️ ${slotWarn}` : `Đã đọc ${DOCNAME[k]} 🐼`);
+    } catch (e) { GauBep.toast(`${f.name}: ${e.message || 'lỗi đọc file'}`); }
+    finally { busy = false; saveSet(); saveLot(); renderAll(); }
+  }
+  /* Xoá chứng từ đã nạp: trả các ô về giá trị trước khi nạp */
+  function clearSlot(k, silent) {
+    const d = L.docSet[k];
+    if (k === 'hd' && d) { S.sups = d.sups; L.supId = d.supId; }
+    else if (d) { Object.entries(d.prev || {}).forEach(([kk, v]) => { if (v === null) delete L[kk]; else L[kk] = v; }); if (d.lines) L.lines = d.lines; }
+    if (k === 'fr' || k === 'bh') delete L.feeDoc[k];
+    delete L.docSet[k]; delete L.docs[k]; if (L.docWarn) delete L.docWarn[k];
+    if (!silent) { saveSet(); saveLot(); renderAll(); GauBep.toast(`Đã xoá ${DOCNAME[k]}`); }
   }
   /* Hợp đồng → hồ sơ NCC (tìm NCC trùng tên / trùng số HĐ, không có thì tạo mới) */
   function applyContract(c, fname, ocr) {
@@ -529,12 +600,17 @@
     L.supId = s.id; L.docs.hd = fname + (ocr ? ' (đọc bản scan)' : '');
     return true;
   }
-  $('#fileDocs').addEventListener('change', (e) => { handleFiles([...e.target.files]); e.target.value = ''; });
-  $('#fileContract').addEventListener('change', (e) => { handleFiles([...e.target.files]); e.target.value = ''; });
-  const dz = $('#dropzone');
-  ['dragenter', 'dragover'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('over'); }));
-  ['dragleave', 'drop'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('over'); }));
-  dz.addEventListener('drop', (e) => handleFiles([...e.dataTransfer.files].filter((f) => /\.(pdf|docx?|xml|png|jpe?g|webp)$/i.test(f.name))));
+  /* Ô chứng từ: chọn file / kéo thả / xoá / chọn dòng phí */
+  const docsBox = $('#docs');
+  docsBox.addEventListener('change', (e) => {
+    const inp = e.target;
+    if (inp.dataset.slot) { const fs = [...inp.files]; inp.value = ''; handleSlot(inp.dataset.slot, fs); return; }
+    if (inp.dataset.fee) { const r = L.feeDoc[inp.dataset.fee].rows[+inp.dataset.i]; r.on = inp.checked; applyFeeTotal(inp.dataset.fee); saveLot(); later(); }
+  });
+  docsBox.addEventListener('click', (e) => { const b = e.target.closest('[data-clear]'); if (b) clearSlot(b.dataset.clear); });
+  ['dragenter', 'dragover'].forEach((ev) => docsBox.addEventListener(ev, (e) => { const c = e.target.closest('.slot'); if (!c) return; e.preventDefault(); c.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((ev) => docsBox.addEventListener(ev, (e) => { const c = e.target.closest('.slot'); if (!c) return; e.preventDefault(); c.classList.remove('over');
+    if (ev === 'drop') handleSlot(c.dataset.k, [...e.dataTransfer.files]); }));
 
   /* ======================= 1–2. CHỨNG TỪ & THÔNG TIN LÔ ======================= */
   function renderLot() {
@@ -544,13 +620,21 @@
       el.classList.toggle('empty', el.value === '');
     });
     const s = sup();
-    $('#docs').innerHTML = Object.keys(DOCNAME).map((k) => {
-      let sub = L.docs[k] || 'Chưa nạp'; let ok = !!L.docs[k];
-      if (k === 'hd' && s.contractNo) { ok = true; sub = `${s.contractNo} · ký ${dmy(s.contractDate) || '?'} · hết hạn ${dmy(s.contractEnd) || '?'}` + (L.docs.hd ? '' : ' (đã lưu ở NCC)'); }
-      if (k === 'fr' && L.docs.fr) sub = `${L.docs.fr} · cước ${fmt(L.freight, 2)} ${L.freightCur || 'VND'}`;
-      if (k === 'bh' && L.docs.bh) sub = `${L.docs.bh} · phí BH ${fmt(L.ins, 2)} ${L.insCur || 'VND'}`;
-      if (k === 'an' && L.docs.an) sub = `${L.docs.an}${L.arrival ? ' · đến ' + dmy(L.arrival) : ''}${L.storeCode ? ' · kho ' + L.storeCode : ''}`;
-      return `<div class="doc${ok ? ' ok' : ''}"><b>${ok ? '✅' : '⬜'} ${DOCNAME[k]}</b><span>${esc(sub)}</span></div>`;
+    $('#docs').innerHTML = DOC_TYPES.map(([k, title, accept, hint]) => {
+      const loaded = !!L.docs[k];
+      let sub = loaded ? L.docs[k] : `Kéo thả vào đây hoặc chọn file · ${hint}`;
+      let ok = loaded;
+      if (k === 'hd' && s.contractNo) { ok = true; sub = (loaded ? L.docs.hd + ' · ' : '') + `${s.contractNo} · ký ${dmy(s.contractDate) || '?'} · hết hạn ${dmy(s.contractEnd) || '?'}` + (loaded ? '' : ' (đã lưu ở NCC)'); }
+      if (k === 'an' && loaded) sub += `${L.arrival ? ' · đến ' + dmy(L.arrival) : ''}${L.storeCode ? ' · kho ' + L.storeCode : ''}`;
+      let fee = '';
+      if ((k === 'fr' || k === 'bh') && L.feeDoc[k]) {
+        const t = feeTotal(k);
+        fee = `<div class="fee-rows">${L.feeDoc[k].rows.map((r, i) => `<label class="${r.on ? "" : "off"}"><input type="checkbox" data-fee="${k}" data-i="${i}"${r.on ? ' checked' : ''}><span>${esc(r.desc)}</span><b>${fmt(r.amt, 2)} ${r.cur}</b></label>`).join('')}
+          <div class="fee-sum">Tính vào ${k === 'fr' ? 'phí vận chuyển' : 'phí bảo hiểm'}: <b>${fmt(t.v, 2)} ${t.cur}</b></div></div>`;
+      }
+      return `<div class="slot${ok ? ' ok' : ''}" data-k="${k}"><div class="slot-head"><b>${ok ? '✅' : '⬜'} ${title.replace(/^\S+\s/, '')}</b><span class="slot-ic">${title.split(' ')[0]}</span></div>
+        <span class="slot-sub">${esc(sub)}</span>${L.docWarn && L.docWarn[k] ? `<span class="slot-warn">⚠️ ${esc(L.docWarn[k])}</span>` : ''}${fee}
+        <div class="slot-act"><label class="btn btn-ghost btn-sm file-btn">📂 ${loaded ? 'Nạp lại' : 'Chọn file'}<input type="file" data-slot="${k}" accept="${accept}" hidden></label>${loaded ? `<button type="button" class="btn btn-ghost btn-sm" data-clear="${k}">🗑 Xoá</button>` : ''}</div></div>`;
     }).join('');
     $('#supSel').innerHTML = S.sups.length ? S.sups.map((x) => `<option value="${x.id}"${x.id === L.supId ? ' selected' : ''}>${esc(x.name || '(chưa đặt tên)')}</option>`).join('')
       : '<option value="">Chưa có — nạp hợp đồng hoặc thêm ở ⚙️ Cài đặt</option>';
@@ -914,14 +998,14 @@
       if (L.anVessel && L.vessel && !normKey(L.anVessel).includes(normKey(L.vessel).slice(0, 8)) && !normKey(L.vessel).includes(normKey(L.anVessel).slice(0, 8))) add('warn', `Tên tàu trên AN (${L.anVessel}) khác Bill (${L.vessel}) — tàu có thể đã đổi, khai theo AN`);
       if (!L.arrival) add('warn', 'Không đọc được ngày hàng đến trên Arrival Notice — nhập tay ở mục 2');
     }
-    if (L.freightDoc) {
-      const d = L.freightDoc;
-      add('ok', `Phí vận chuyển lấy từ ${d.file}: ${d.lines.map((x) => `${x.desc} = ${fmt(x.amt, 2)} ${x.cur}`).join(' + ')}`);
-      if (d.local && d.local.length) add('ok', `Đã bỏ qua phí local không cộng vào trị giá hải quan: ${d.local.slice(0, 6).join(', ')}`);
-    }
-    if (L.anFreightUsd && L.freightCur === 'USD' && has(L.freight) && Math.abs(L.anFreightUsd - L.freight) > 0.01) add('warn', `Cước trên Arrival Notice USD ${fmt(L.anFreightUsd, 2)} khác hoá đơn cước USD ${fmt(L.freight, 2)}`);
-    if (L.anFreightUsd && !has(L.freight)) add('warn', `Arrival Notice ghi cước O/F USD ${fmt(L.anFreightUsd, 2)} — chưa có hoá đơn cước, có thể khai tạm theo AN`);
-    if (L.insDoc) add('ok', `Phí bảo hiểm lấy từ ${L.insDoc.file}: ${L.insDoc.lines.map((x) => `${fmt(x.amt, 2)} ${x.cur}`).join(' + ')}`);
+    ['fr', 'bh'].forEach((k) => {
+      const d = L.feeDoc[k]; if (!d) return;
+      const on = d.rows.filter((r) => r.on); const off = d.rows.filter((r) => !r.on);
+      if (!on.length) add('err', `${DOCNAME[k]} ${d.file}: chưa chọn dòng phí nào — tick dòng cần tính ở mục 1`);
+      else add('ok', `${k === 'fr' ? 'Phí vận chuyển' : 'Phí bảo hiểm'} lấy từ ${d.file}: ${on.map((x) => `${x.desc} = ${fmt(x.amt, 2)} ${x.cur}`).join(' + ')}`);
+      if (k === 'fr' && off.length) add('ok', `Không cộng vào trị giá hải quan: ${off.slice(0, 6).map((x) => x.desc).join(', ')}`);
+      if (on.some((r) => r.cur === 'USD') && on.some((r) => r.cur !== 'USD')) add('warn', `${DOCNAME[k]}: có cả dòng USD và VND — tool quy USD sang VND theo tỷ giá tính thuế`);
+    });
     // linh kiện
     L.lines.forEach((l, i) => {
       const h = peek(l); if (!h.part) return;
@@ -1184,7 +1268,8 @@
 
   let pending = false;
   function later() { if (pending) return; pending = true; setTimeout(() => { pending = false; renderAll(); }, 0); }
-  function renderAll() { renderLot(); renderLines(); renderTem(); renderTemLog(); renderChecks(); renderOut(); renderTax(); renderSettings(); }
+  function renderAll() {
+    L.docs = L.docs || {}; L.docSet = L.docSet || {}; L.feeDoc = L.feeDoc || {}; renderLot(); renderLines(); renderTem(); renderTemLog(); renderChecks(); renderOut(); renderTax(); renderSettings(); }
   renderAll();
   loadTariff();
   loadLcKeywords();

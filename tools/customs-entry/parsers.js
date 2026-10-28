@@ -47,8 +47,14 @@
     while ((m = r1.exec(t))) { const mm = mon(m[2]); if (mm && +m[1] <= 31) out.push({ i: m.index, v: iso(m[3], mm, m[1]) }); }
     const r2 = /\b([A-Za-z]{3,9})[\s.,]*(\d{1,2})(?:st|nd|rd|th)?[\s,.]+(\d{4})\b/gi;
     while ((m = r2.exec(t))) { const mm = mon(m[1]); if (mm && +m[2] <= 31) out.push({ i: m.index, v: iso(m[3], mm, m[2]) }); }
-    const r3 = /\b(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})\b/g;
+    const r3 = /\b(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})\b/g;
     while ((m = r3.exec(t))) { if (+m[2] <= 12) out.push({ i: m.index, v: iso(m[3], m[2], m[1]) }); }
+    const r4 = /\b(\d{4})[\-\/.](\d{1,2})[\-\/.](\d{1,2})\b/g;                    // 2026-10-12
+    while ((m = r4.exec(t))) { if (+m[2] <= 12 && +m[3] <= 31) out.push({ i: m.index, v: iso(m[1], m[2], m[3]) }); }
+    const r5 = /\b(\d{1,2})[\s\-\/.]([A-Za-z]{3,9})[\s\-\/.,]+(\d{2})\b(?![\d:])/gi;   // 12-Oct-26
+    while ((m = r5.exec(t))) { const mm = mon(m[2]); if (mm && +m[1] <= 31 && !out.some((o) => o.i === m.index)) out.push({ i: m.index, v: iso('20' + m[3], mm, m[1]) }); }
+    const r6 = /ngày\s*(?:\([a-z]+\))?\s*(\d{1,2})\s*tháng\s*(?:\([a-z]+\))?\s*(\d{1,2})\s*năm\s*(?:\([a-z]+\))?\s*(\d{4})/gi;   // ngày 13 tháng 10 năm 2026
+    while ((m = r6.exec(t))) out.push({ i: m.index, v: iso(m[3], m[2], m[1]) });
     return out.sort((a, b) => a.i - b.i);
   }
 
@@ -58,14 +64,22 @@
     pages.forEach((items) => {
       const rows = {};
       items.forEach((it) => { if (!String(it.s).trim()) return; const y = Math.round(it.y / 3) * 3; (rows[y] = rows[y] || []).push(it); });
-      Object.keys(rows).map(Number).sort((a, b) => b - a)
-        .forEach((y) => lines.push(rows[y].sort((a, b) => a.x - b.x).map((o) => o.s).join(' ').replace(/\s+/g, ' ').trim()));
+      // mảnh chữ sát nhau (vd "HÓA ĐƠ" + "N") ghép liền, cách xa thì thêm khoảng trắng
+      Object.keys(rows).map(Number).sort((a, b) => b - a).forEach((y) => {
+        const it = rows[y].sort((a, b) => a.x - b.x); let out = '';
+        it.forEach((o, k) => {
+          const prev = it[k - 1];
+          const gap = prev && prev.w ? o.x - (prev.x + prev.w) : 99;
+          out += (k && gap > Math.max(1, (o.h || prev.h || 8) * 0.18) ? ' ' : '') + o.s;
+        });
+        lines.push(out.replace(/\s+/g, ' ').trim());
+      });
     });
     return lines.join('\n');
   }
 
   function classify(t) {
-    const u = String(t).toUpperCase();
+    const u = String(t).normalize('NFC').toUpperCase();
     if (/ARRIVAL\s*NOTICE|NOTICE\s*OF\s*ARRIVAL|GIẤY\s*BÁO\s*HÀNG\s*ĐẾN|THÔNG\s*BÁO\s*HÀNG\s*ĐẾN|GIẤY BÁO NHẬN HÀNG/.test(u)) return 'an';
     if (/HÓA\s*ĐƠN\s*GIÁ\s*TRỊ\s*GIA\s*TĂNG|HOÁ\s*ĐƠN\s*GIÁ\s*TRỊ\s*GIA\s*TĂNG|HÓA\s*ĐƠN\s*ĐIỆN\s*TỬ|HOÁ\s*ĐƠN\s*ĐIỆN\s*TỬ|MÃ CỦA CƠ QUAN THUẾ|HÓA ĐƠN BÁN HÀNG/.test(u)) return 'vat';
     if (/DEBIT\s*NOTE|FREIGHT\s*INVOICE|INSURANCE\s*(POLICY|CERTIFICATE)|ĐƠN BẢO HIỂM|GIẤY CHỨNG NHẬN BẢO HIỂM/.test(u)) return 'fee';
@@ -128,10 +142,82 @@
       const coded = /\d/.test(r[1]) || /-/.test(r[1]);
       lines.push({ code: coded ? r[1] : '', name: titleCase(coded ? r[2] : r[1] + ' ' + r[2]), qty: num(r[3]), unit: r[4], price: num(r[5]), amount: num(r[6]) });
     });
+    if (!lines.length) lines.push(...ciGeneric(u));
     if (lines.length) o.lines = lines;
     if ((m = u.match(/TOTAL[^\n]*?(?:USD|US\$)\s*([\d.,]+)\s*$/m))) o.invTotal = num(m[1]);
     else if (lines.length) o.invTotal = lines.reduce((a, b) => a + b.amount, 0);
     return o;
+  }
+
+  /* Invoice khác mẫu: mỗi dòng tìm bộ 3 số SL × Đơn giá = Thành tiền (theo thứ tự trên dòng),
+     phần chữ phía trước là mã + tên hàng. Không phụ thuộc vị trí cột hay tên cột. */
+  const UNIT_RE = /^(PCS|PC|PCE|SETS|SET|UNITS|UNIT|CTNS|CTN|CARTONS|BOX|BOXES|PAIRS|PR|NOS|EA)$/;
+  function ciGeneric(u) {
+    const out = [];
+    u.split('\n').forEach((line) => {
+      if (/^\s*(TOTAL|SUB\s*TOTAL|GRAND|SAY|TỔNG)/.test(line)) return;
+      const toks = [...line.matchAll(/(?:US\$|USD|\$)?\s*(\d[\d.,]*)/g)].map((x) => ({ i: x.index, end: x.index + x[0].length, v: num(x[1]), raw: x[1] }));
+      if (toks.length < 3) return;
+      let best = null;
+      for (let a = 0; a < toks.length - 2; a++) for (let b = a + 1; b < toks.length - 1; b++) for (let c = b + 1; c < toks.length; c++) {
+        const q = toks[a].v, p = toks[b].v, amt = toks[c].v;
+        if (!(q > 0 && p > 0 && amt > 0) || Math.abs(q - Math.round(q)) > 1e-6) continue;
+        if (Math.abs(q * p - amt) <= Math.max(0.011, amt * 0.002)) best = { a, b, c };
+      }
+      if (!best) return;
+      const head = line.slice(0, toks[best.a].i).trim();
+      const after = line.slice(toks[best.a].end, toks[best.b].i).trim().split(/\s+/)[0] || '';
+      const words = head.split(/\s+/).filter(Boolean);
+      if (!words.length) return;
+      // bỏ số thứ tự đầu dòng ("1", "1.")
+      if (/^\d{1,3}\.?$/.test(words[0])) words.shift();
+      const ci0 = words.findIndex((w) => /\d/.test(w) && /[A-Z]/.test(w) && w.length >= 3);
+      const code = ci0 >= 0 && ci0 <= 1 ? words.splice(ci0, 1)[0] : '';
+      const name = words.filter((w) => !UNIT_RE.test(w) && !/^(USD|US\$)$/.test(w)).join(' ');
+      const unit = UNIT_RE.test(after) ? after : 'PCS';
+      out.push({ code: code.replace(/[.,;:]+$/, ''), name: titleCase(name), qty: toks[best.a].v, unit, price: toks[best.b].v, amount: toks[best.c].v });
+    });
+    return out;
+  }
+
+  /* Invoice / Packing List dạng Excel: tìm dòng tiêu đề theo tên cột (EN / VN), đọc các dòng bên dưới */
+  const HEAD = {
+    code: /^(model|item\s*(no|code)?|code|art(icle)?\s*no|sku|part\s*no|mã(\s*hàng)?|ma hang|product\s*code|style)/,
+    name: /(description|desc|product\s*name|commodity|goods|name|tên\s*hàng|ten hang|mô tả)/,
+    qty: /^(q'?ty|quantity|qty\s*\(?pcs\)?|số\s*lượng|so luong|sl|pcs)$|quantity|q'?ty/,
+    unit: /^(unit|uom|đvt|dvt|đơn vị)$/,
+    price: /(unit\s*price|price|đơn\s*giá|don gia|u\/price)/,
+    amount: /(amount|total\s*(value|amount|price)?|value|thành\s*tiền|thanh tien)/,
+    pkgs: /(ctns|cartons|no\.?\s*of\s*(pkgs|packages|ctns)|pkgs|packages|số\s*kiện|so kien)/,
+    gw: /(g\.?\s*w|gross)/, nw: /(n\.?\s*w|net)/, cbm: /(cbm|meas|m3|volume)/,
+  };
+  function sheetRows(aoa) {
+    const norm = (v) => String(v ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+    let hi = -1, map = null;
+    for (let r = 0; r < Math.min(aoa.length, 40) && hi < 0; r++) {
+      const row = (aoa[r] || []).map(norm); const m = {};
+      row.forEach((c, i) => { if (!c) return; for (const k of ['price', 'amount', 'qty', 'code', 'name', 'unit', 'pkgs', 'gw', 'nw', 'cbm']) if (m[k] === undefined && HEAD[k].test(c)) { m[k] = i; break; } });
+      if (m.qty !== undefined && (m.price !== undefined || m.amount !== undefined || m.gw !== undefined)) { hi = r; map = m; }
+    }
+    if (hi < 0) return { rows: [], meta: {} };
+    const rows = [];
+    for (let r = hi + 1; r < aoa.length; r++) {
+      const row = aoa[r] || []; const g = (k) => (map[k] === undefined ? '' : row[map[k]]);
+      const first = norm(row.find((c) => norm(c)) || '');
+      if (/^(total|tổng|sub total|grand total|say)/.test(first)) break;
+      const qty = num(g('qty'));
+      if (!(qty > 0)) continue;
+      rows.push({ code: String(g('code') || '').trim(), name: String(g('name') || '').trim(), qty, unit: String(g('unit') || 'PCS').toUpperCase(), price: num(g('price')), amount: num(g('amount')),
+        pkgs: num(g('pkgs')), gw: num(g('gw')), nw: num(g('nw')), cbm: num(g('cbm')) });
+    }
+    // số / ngày hoá đơn: ô có chữ "Invoice No" / "Date" → ô kế bên hoặc phần sau dấu ":"
+    const meta = {};
+    aoa.slice(0, hi).forEach((row) => (row || []).forEach((c, i) => {
+      const t = String(c ?? ''); const nx = String((row || [])[i + 1] ?? (row || [])[i + 2] ?? '');
+      if (!meta.invNo && /invoice\s*(no|number)|số\s*hóa\s*đơn|inv\.?\s*no/i.test(t)) meta.invNo = (t.split(/[:：]/)[1] || nx).trim();
+      if (!meta.invDate && /^\s*(date|ngày)/i.test(t)) { const d = findDates((t.split(/[:：]/)[1] || '') + ' ' + nx); if (d.length) meta.invDate = d[0].v; }
+    }));
+    return { rows, meta };
   }
 
   function pl(t) {
@@ -297,10 +383,12 @@
     return 'other';
   }
   /* Debit note / hoá đơn tiếng Anh không theo mẫu VN: tìm dòng cước, bảo hiểm và số tiền (USD hoặc VND) */
-  function feeLines(text) {
+  function feeLines(text, all) {
     const out = [];
     String(text).split('\n').forEach((line) => {
-      const k = feeKind(line); if (k !== 'freight' && k !== 'ins') return;
+      const k = feeKind(line);
+      if (all) { if (/^\s*(total|sub\s*total|grand|tổng|cộng|vat|thuế|amount in words|say)/i.test(line) || !/[a-zà-ỹ]{3}/i.test(line)) return; }
+      else if (k !== 'freight' && k !== 'ins') return;
       const usd = line.match(/(?:USD|US\$)\s*([\d.,]+)|([\d.,]+)\s*(?:USD|US\$)/i);
       if (usd) out.push({ desc: line.trim(), kind: k, usd: num(usd[1] || usd[2]) });
       else { const v = [...line.matchAll(/\d[\d.,]*\d|\d/g)].map((x) => parseFloat(x[0].replace(/[.,](?=\d{3}(\D|$))/g, '').replace(',', '.'))).filter((n) => n > 0);
@@ -318,7 +406,7 @@
     return starts.map((st, n) => tem(lines.slice(st, n + 1 < starts.length ? starts[n + 1] : undefined).join('\n'))).filter((x) => x.model || x.nameVi);
   }
 
-  const API = { num, findDates, linesFromPdfPages, classify, bill, ci, pl, co, contract, tem, tems, an, feeKind, feeLines, fixOcrDigits, POL, POD };
+  const API = { num, findDates, linesFromPdfPages, classify, ciGeneric, sheetRows, bill, ci, pl, co, contract, tem, tems, an, feeKind, feeLines, fixOcrDigits, POL, POD };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else root.CustomsParsers = API;
 })(typeof window !== 'undefined' ? window : globalThis);
