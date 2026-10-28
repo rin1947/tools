@@ -191,7 +191,7 @@ Phong cách: **hồng cute · xanh tre · gấu trúc**. Mềm, bo tròn, thân 
 - **Xuất Excel:** `GauBep.exportXlsx(tênFile, [{ name, rows, colWidths }])`. Số xuất ra dạng **number** (không phải chuỗi đã format). Tên file: `<TienTo>_<tên>_<ddmmyy>.xlsx` (dùng `GauBep.today()`).
 - **Chống cache khi cập nhật:** trong `index.html` của tool, file CSS/JS nội bộ gắn đuôi `?v=YYYYMMDDx` (vd `app.js?v=20261026c`). Mỗi lần sửa tool phải **tăng** đuôi này, nếu không trình duyệt có thể vẫn chạy bản cũ.
 - **Thư viện ngoài:** chỉ khi thật cần, chỉ lấy từ `cdnjs.cloudflare.com`, và tải lười (lazy) như `loadSheetJS` trong `common.js`.
-  Ngoại lệ duy nhất: OCR (tesseract.js 5.1.1 + tesseract.js-core + dữ liệu chữ `@tesseract.js-data/eng`, và `@tesseract.js-data/vie` cho tem phụ) lấy từ `cdn.jsdelivr.net` (cdnjs không có bộ core/dữ liệu); ghim đúng phiên bản, ảnh vẫn xử lý trên máy, không gửi đi.
+  Ngoại lệ: OCR (tesseract.js 5.1.1 + tesseract.js-core + dữ liệu chữ `@tesseract.js-data/eng`, và `@tesseract.js-data/vie` cho tem phụ) và **bảng mã font pdf.js** (`pdfjs-dist@3.11.174/cmaps/`, `standard_fonts/` — cần để đọc PDF dùng font Trung Quốc) lấy từ `cdn.jsdelivr.net` (cdnjs không có bộ core/dữ liệu); ghim đúng phiên bản, ảnh vẫn xử lý trên máy, không gửi đi.
 - **Không** gọi API ngoài với dữ liệu người dùng. **Không** đưa dữ liệu thật (giá, NCC, hoá đơn) vào repo — chỉ dữ liệu mẫu.
 - **Dữ liệu tham chiếu** (mã HS, thuế suất, phí…) để ở file `.js` riêng trong thư mục tool, có comment nguồn + trường `checked` cho biết đã đối chiếu hay chưa.
 - Tên biến/hàm tiếng Anh; nội dung hiển thị và comment giải thích nghiệp vụ tiếng Việt.

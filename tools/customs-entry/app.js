@@ -360,7 +360,10 @@
     return window.pdfjsLib;
   }
   // cMap: PDF dùng font Trung Quốc / CJK (vd vận đơn của forwarder TQ) cần bảng mã này mới đọc được chữ
-  async function openPdf(file) { const pdfjs = await loadPdfJs(); return pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), cMapUrl: PDFJS + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS + 'standard_fonts/' }).promise; }
+  // (bảng mã lấy từ gói npm pdfjs-dist cùng phiên bản trên jsDelivr — cdnjs không kèm thư mục cmaps)
+  const PDF_CMAPS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/';
+  const PDF_FONTS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/';
+  async function openPdf(file) { const pdfjs = await loadPdfJs(); return pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), cMapUrl: PDF_CMAPS, cMapPacked: true, standardFontDataUrl: PDF_FONTS }).promise; }
   async function pdfPages(doc) {
     const pages = [];
     for (let i = 1; i <= Math.min(doc.numPages, 6); i++) {
@@ -581,6 +584,9 @@
         Object.keys(L).forEach((kk) => { if (['docs', 'docSet', 'feeDoc', 'lines', 'sample'].includes(kk)) return; if (JSON.stringify(L[kk]) !== JSON.stringify(before[kk])) prev[kk] = before[kk] === undefined ? null : before[kk]; });
         L.docSet[k] = { prev, lines: k === 'ci' ? before.lines : undefined };
       }
+      // kiểm tra trường chính của từng loại — thiếu thì báo ngay trên ô
+      const MAIN = { bill: ['blNo', 'số vận đơn'], ci: ['invNo', 'số Invoice'], pl: ['plGw', 'trọng lượng'], co: ['coNo', 'số C/O'], an: ['arrival', 'ngày hàng đến'] };
+      if (MAIN[k] && !has(L[MAIN[k][0]]) && !slotWarn) slotWarn = `Không đọc được ${MAIN[k][1]}${r.tag ? ' (file đọc bằng nhận dạng chữ)' : ''} — kiểm tra các ô ở mục 2, gửi file này để chỉnh cách đọc`;
       L.docs[k] = f.name + (r.tag || '') + (info ? ' · ' + info : '');
       L.docWarn = L.docWarn || {}; if (slotWarn) L.docWarn[k] = slotWarn; else delete L.docWarn[k];
       L.lines.forEach((l) => { const m = modelOf(l.code); if (m && !m.supId) m.supId = L.supId; });

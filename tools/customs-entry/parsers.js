@@ -110,6 +110,7 @@
     if ((m = u.match(/ON\s*BOARD\s*:?\s*(.{0,30})/))) { const d = findDates(m[1]); if (d.length) o.blDate = d[0].v; }
     if (!o.blDate) { const d = findDates(u); if (d.length) o.blDate = d[d.length - 1].v; }
     if ((m = u.match(/VESSEL[^\n]*?(?:VOY(?:AGE)?\.?\s*(?:NO\.?)?|NO\.?)\s*:?\s*([A-Z][A-Z0-9 .\-]{4,40})/))) o.vessel = m[1].trim();
+    if (o.vessel && /PORT|PLACE|LOADING|DISCHARGE|RECEIPT|DELIVERY|VOYAGE|VESSEL/.test(o.vessel)) delete o.vessel;   // đọc nhầm nhãn cột
     const L = u.split('\n').map((s) => s.trim());
     if (!o.vessel) {
       const v = L.find((s) => /^(MSC|MAERSK|CMA|COSCO|ONE |EVER|OOCL|WAN HAI|YM |HMM|ZIM|SITC|KMTC|TS LINES|HAPAG|PIL|INTERASIA|XIN|CSCL|APL)[A-Z0-9 .\-]*\s[A-Z0-9]{3,8}$/.test(s));
