@@ -73,7 +73,9 @@
     ['economic technological development zone', 'Khu Phát triển Kinh tế - Kỹ thuật'], ['economic development zone', 'Khu Phát triển Kinh tế'],
     ['high tech industrial development zone', 'Khu Phát triển Công nghiệp Công nghệ cao'], ['high tech zone', 'Khu Công nghệ cao'], ['hi tech zone', 'Khu Công nghệ cao'],
     ['industry zone', 'Khu công nghiệp'], ['industrial park', 'Khu công nghiệp'], ['industrial zone', 'Khu công nghiệp'], ['industrial area', 'Khu công nghiệp'], ['industry park', 'Khu công nghiệp'],
-    ['development zone', 'Khu Phát triển'], ['free trade zone', 'Khu Thương mại tự do'], ['science park', 'Khu Khoa học'],
+    ['development zone', 'Khu Phát triển'], ['testing area', 'Khu thí điểm'], ['test area', 'Khu thí điểm'], ['pilot zone', 'Khu thí điểm'],
+    ['experimental zone', 'Khu thí điểm'], ['pilot free trade zone', 'Khu Thương mại tự do thí điểm'], ['industrial estate', 'Khu công nghiệp'], ['industrial district', 'Khu công nghiệp'],
+    ['industrial base', 'Cụm công nghiệp'], ['industrial cluster', 'Cụm công nghiệp'], ['logistics park', 'Khu logistics'], ['bonded zone', 'Khu ngoại quan'], ['new area', 'Khu mới'], ['new district', 'Khu mới'], ['free trade zone', 'Khu Thương mại tự do'], ['science park', 'Khu Khoa học'],
   ];
   const COUNTRY = { CN: 'Trung Quốc', VN: 'Việt Nam', TH: 'Thái Lan', MY: 'Malaysia', ID: 'Indonesia', KR: 'Hàn Quốc', JP: 'Nhật Bản', TW: 'Đài Loan', HK: 'Hồng Kông',
     IN: 'Ấn Độ', SG: 'Singapore', PH: 'Philippines', DE: 'Đức', IT: 'Ý', FR: 'Pháp', US: 'Hoa Kỳ', GB: 'Anh' };
@@ -81,6 +83,14 @@
   const clean = (s) => String(s || '').replace(/[“”"]/g, '').replace(/\s+/g, ' ').trim();
   // giữ dấu chấm / phẩy trong số (1.7L, 2,5kg)
   const low = (s) => clean(s).toLowerCase().replace(/(\d)[.,](\d)/g, '$1§$2').replace(/[^a-z0-9&' §]+/g, ' ').replace(/§/g, '.').replace(/\s+/g, ' ').trim();
+  /* Tên riêng phiên âm tiếng Trung (pinyin, vd Xinhua, Hongli): theo cách khai thông thường GIỮ NGUYÊN, không tính là "chưa dịch" */
+  const PY_SYL = /^(?:(?:zh|ch|sh|[bpmfdtnlgkhjqxrzcsyw])?(?:iang|iong|uang|ueng|ang|eng|ing|ong|ian|iao|uai|uan|ai|ei|ao|ou|an|en|in|un|ia|ie|iu|ua|uo|ue|ui|er|a|o|e|i|u|v)(?![aeiouv]))+$/;
+  const NOT_PY = new Set(['area', 'zone', 'park', 'road', 'town', 'room', 'main', 'inner', 'unit', 'line', 'ring', 'lane', 'zhen']);
+  const isPinyin = (w) => { w = String(w).toLowerCase().replace(/['’-]/g, ''); return w.length >= 3 && !NOT_PY.has(w) && PY_SYL.test(w); };
+  /* tách danh sách chưa dịch: tên riêng pinyin (names) / từ thật sự chưa dịch (unknown) */
+  const splitUnknown = (arr) => { const names = [], unknown = [];
+    arr.forEach((s) => { const ws = String(s).split(/\s+/).filter(Boolean); (ws.length && ws.every(isPinyin) ? names : unknown).push(s); });
+    return { names: [...new Set(names)], unknown: [...new Set(unknown)] }; };
   const cap = (s) => s.replace(/(^|\s)(\S)/g, (m, a, b) => a + b.toUpperCase());
   const placeMap = new Map(PLACES.map((p) => [p[0], p]));
   const LEVEL = { p: 'Tỉnh', c: 'Thành phố', d: 'Quận', t: 'Trấn' };
@@ -126,7 +136,7 @@
     const brand = pcs.filter((p) => p.raw).map((p) => cap(p.raw));
     const trade = pcs.filter((p) => p.vi).map((p) => p.vi).reverse();
     const vi = ['Công ty TNHH', group ? 'Tập đoàn' : '', ...trade, ...brand, ...places].filter(Boolean).join(' ');
-    return { vi, unknown: brand };
+    return { vi, ...splitUnknown(brand) };
   }
 
   /* Tách 1 đoạn địa chỉ thành các địa danh đã biết (vd "ningbo city zhejiang" → Ninh Ba (thành phố), Chiết Giang (tỉnh)) */
@@ -167,7 +177,16 @@
       if (m) { out.push('Số ' + m[1].toUpperCase()); return; }
       const z = phrasePieces(t, ZONES);
       if (z.some((p) => p.vi)) {
-        z.forEach((p) => { if (p.vi) out.push(p.vi); else { const r = placeRun(p.raw); out.push(...r.out); if (r.rest.length) { unknown.push(cap(r.rest.join(' '))); out.push(cap(r.rest.join(' '))); } } });
+        for (let k = 0; k < z.length; k++) {
+          const p = z[k], nx = z[k + 1];
+          // "Xinhua Industry Zone" → "Khu công nghiệp Xinhua"; "Ningbo Testing Area" → "Khu thí điểm Ninh Ba" (tiếng Việt: loại khu đứng trước tên)
+          if (p.raw && nx && nx.vi) {
+            const nm = p.raw.split(' ').filter(Boolean).map((w) => { const pl = placeMap.get(w); if (pl) return pl[1]; unknown.push(cap(w)); return cap(w); }).join(' ');
+            out.push(nx.vi + ' ' + nm); k++; continue;
+          }
+          if (p.vi) { out.push(p.vi); continue; }
+          const r = placeRun(p.raw); out.push(...r.out); if (r.rest.length) { unknown.push(cap(r.rest.join(' '))); out.push(cap(r.rest.join(' '))); }
+        }
         return;
       }
       const r = placeRun(t);
@@ -178,7 +197,7 @@
     });
     const cc = String(countryCode || (hasCountry ? 'CN' : '')).toUpperCase();
     if (cc && COUNTRY[cc]) out.push(COUNTRY[cc]);
-    return { vi: out.join(', '), unknown: [...new Set(unknown)] };
+    return { vi: out.join(', '), ...splitUnknown(unknown) };
   }
 
   /* Địa chỉ cho ô ECUS: CHỮ IN, bỏ dấu câu, xếp vào tối đa 4 dòng ≤ 35 ký tự, dòng cuối là tên nước */
@@ -227,6 +246,15 @@
     ['user manual', 'sách hướng dẫn sử dụng'], ['instruction manual', 'sách hướng dẫn sử dụng'], ['manual', 'sách hướng dẫn'], ['warranty card', 'phiếu bảo hành'],
     ['color box', 'hộp màu'], ['gift box', 'hộp'], ['carton', 'thùng carton'], ['box', 'hộp'], ['label', 'nhãn'], ['sticker', 'nhãn dán'], ['bag', 'túi'], ['foam', 'mút xốp'],
     ['bracket', 'giá đỡ'], ['holder', 'giá đỡ'], ['clip', 'kẹp'], ['hook', 'móc'], ['brush', 'bàn chải'], ['plate', 'tấm'], ['panel', 'tấm'], ['sheet', 'tấm'], ['net', 'lưới'], ['mesh', 'lưới'],
+    // bổ sung: linh kiện điện / quạt / máy sấy / máy xay hay gặp
+    ['temperature fuse', 'cầu chì nhiệt'], ['thermal fuse', 'cầu chì nhiệt'], ['power switch', 'công tắc nguồn'], ['on off switch', 'công tắc bật tắt'], ['speed switch', 'công tắc tốc độ'],
+    ['air outlet', 'cửa gió ra'], ['air inlet grille', 'lưới cửa gió vào'], ['air inlet', 'cửa gió vào'], ['air outlet grille', 'lưới cửa gió ra'], ['cool shot', 'gió mát'],
+    ['pcb board', 'bo mạch'], ['circuit board', 'bo mạch'], ['main board', 'bo mạch chính'], ['board', 'bo mạch'], ['jug', 'cối'], ['coupler', 'khớp nối'], ['coupling', 'khớp nối'],
+    ['float', 'phao'], ['dust', 'bụi'], ['hanging loop', 'vòng treo'], ['hanging ring', 'vòng treo'], ['carbon brush', 'chổi than'], ['resistor', 'điện trở'], ['diode', 'đi-ốt'],
+    ['terminal block', 'cầu đấu dây'], ['terminal', 'đầu cos'], ['wire harness', 'bó dây điện'], ['harness', 'bó dây điện'], ['nameplate', 'nhãn thông số'], ['rating label', 'nhãn thông số'],
+    ['mounting', 'lắp đặt'], ['grille', 'lưới'], ['oscillation', 'đảo chiều'], ['oscillating', 'đảo chiều'], ['synchronous motor', 'động cơ đồng bộ'], ['castor', 'xoay'], ['caster', 'xoay'],
+    ['side', 'bên hông'], ['timer', 'bộ hẹn giờ'], ['ntc', 'NTC'], ['anion generator', 'bộ tạo ion âm'], ['ion generator', 'bộ tạo ion'], ['reflector', 'chóa phản xạ'],
+    ['power', 'nguồn'], ['speed', 'tốc độ'], ['temperature', 'nhiệt độ'], ['heat', 'nhiệt'],
     ['accessories', 'phụ kiện'], ['accessory', 'phụ kiện'], ['spare parts', 'linh kiện'], ['spare part', 'linh kiện'], ['parts', 'linh kiện'], ['part', 'linh kiện'],
   ];
   const MATS = [
@@ -294,7 +322,7 @@
   }
 
   const country = (cc) => COUNTRY[String(cc || '').toUpperCase()] || cc || '';
-  const API = { product, company, address, ecusAddress, country, part, isPartName, PLACES, PRODUCT, ORG };
+  const API = { isPinyin, product, company, address, ecusAddress, country, part, isPartName, PLACES, PRODUCT, ORG };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else root.ViDict = API;
 })(typeof window !== 'undefined' ? window : globalThis);

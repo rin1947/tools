@@ -216,7 +216,8 @@
   function temAuto(code) {
     const m = modelOf(code) || {}; const p = lcFind(code); const s = S.sups.find((x) => x.id === m.supId) || sup();
     const tech = [p && p.tech, p && p.desc, m.descManual ? m.desc : ''].filter(Boolean).join(' ; ');
-    const a = { unknown: [] };
+    const a = { unknown: [], names: [] };
+    const take = (r) => { a.unknown.push(...(r.unknown || [])); a.names.push(...(r.names || [])); };
     if (p && p.name) a.nameVi = String(p.name).replace(/\s*\(ví dụ\)\s*/i, '').trim();
     else if (m.invName) { const t = V.product(m.invName); a.nameVi = t.vi; if (t.unknown.length) a.unknown.push(...t.unknown); }
     a.brand = m.brand || s.brand || '';
@@ -229,16 +230,16 @@
     if (p && parseNum(p.weight) > 0) a.wP = String(parseNum(p.weight)) + 'Kg';
     // tên / địa chỉ NSX: ưu tiên nhà máy ghi ở Landed Cost, không có thì lấy bên bán trong hợp đồng
     // (từ chưa dịch được luôn đưa vào unknown; phần hiển thị chỉ báo khi từ đó còn nằm trong ô)
-    if (p && p.factory) { const t = V.company(p.factory); a.makerVi = t.vi; a.unknown.push(...t.unknown); }
-    else if (m.makerEn) { const t = V.company(m.makerEn); a.makerVi = t.vi; a.unknown.push(...t.unknown); }
+    if (p && p.factory) { const t = V.company(p.factory); a.makerVi = t.vi; take(t); }
+    else if (m.makerEn) { const t = V.company(m.makerEn); a.makerVi = t.vi; take(t); }
     else if (s.name) { const t = V.company(s.name); a.makerVi = s.nameVi || t.vi; a.unknown.push(...t.unknown); }
-    if (p && p.faddr) { const t = V.address(p.faddr, 'CN'); a.makerAddrVi = t.vi; a.unknown.push(...t.unknown); }
-    else if (m.makerAddrEn) { const t = V.address(m.makerAddrEn, 'CN'); a.makerAddrVi = t.vi; a.unknown.push(...t.unknown); }
+    if (p && p.faddr) { const t = V.address(p.faddr, 'CN'); a.makerAddrVi = t.vi; take(t); }
+    else if (m.makerAddrEn) { const t = V.address(m.makerAddrEn, 'CN'); a.makerAddrVi = t.vi; take(t); }
     else if (s.addrRaw || s.addr1) {
       const t = V.address(s.addrRaw || [s.addr1, s.addr2, s.addr3].filter(Boolean).join(', '), s.country || 'CN');
-      a.makerAddrVi = s.addrVi || t.vi; a.unknown.push(...t.unknown);
+      a.makerAddrVi = s.addrVi || t.vi; take(t);
     }
-    a.unknown = [...new Set(a.unknown)];
+    a.unknown = [...new Set(a.unknown)]; a.names = [...new Set(a.names)];
     return a;
   }
   function temOf(code) {
@@ -670,6 +671,7 @@
         <div class="tem-form">
           <h3 class="sub-title" style="margin-top:0">🏷️ ${esc(code)}${m.invName ? ` <span class="muted small">· Invoice: ${esc(m.invName)}</span>` : ''}${m.temFile ? ` <span class="muted small">· tem: ${esc(m.temFile)}</span>` : ''}</h3>
           ${unknown.length ? `<div class="note">✍️ Tên riêng chưa dịch được: <b>${esc(unknown.join(', '))}</b> — sửa tay ở ô bên dưới (vd tên tiếng Việt in trên tem cũ), tool nhớ cho các lô sau.</div>` : ''}
+          ${(t.auto.names || []).filter((u) => [t.makerVi, t.makerAddrVi].some((v) => String(v).includes(u))).length ? `<p class="help-text">ℹ️ Tên riêng tiếng Trung giữ nguyên phiên âm như cách khai thông thường: <b>${esc(t.auto.names.join(', '))}</b>. Muốn ghi tên Hán Việt (vd theo tem cũ) thì sửa ô bên dưới.</p>` : ''}
           <div class="form-grid tem-grid">${TEM_FIELDS.map(([k, lbl, tip]) => {
             const isAuto = !has(m.tem[k]) && has(t[k]);
             const wide = ['makerVi', 'makerAddrVi', 'feature', 'nameVi'].includes(k);
@@ -813,7 +815,7 @@
     if (focLines.length) add('ok', `${focLines.length} dòng hàng F.O.C — khai theo SL × đơn giá: ${fmt(focLines.reduce((a, l) => a + lineAmt(l), 0), 2)} USD`);
     L.lines.forEach((l, i) => { if (has(l.invAmount) && Math.abs(lineAmt(l) - l.invAmount) > 0.01) add('err', `Dòng ${i + 1} ${l.code}: SL × đơn giá = ${fmt(lineAmt(l), 2)}, form ghi trị giá ${fmt(l.invAmount, 2)}`); });
     L.lines.forEach((l, i) => {
-      const hs = lineHS(l); const R = rateOf(hs, l); const nm = l.code || enOf(peek(l)) || `dòng ${i + 1}`;
+      const hs = lineHS(l); const R = rateOf(hs, l); const pk = peek(l); const nm = l.code || (pk.part && enOf(pk) ? V.part(enOf(pk)).vi : enOf(pk)) || `dòng ${i + 1}`;
       if (!hs) add('err', `Dòng ${i + 1} (${nm}): chưa có mã HS — bấm ô Mã HS để tra, hoặc 🚢 Lấy HS từ Landed Cost`);
       else if (R && R.bad) add('err', `Dòng ${i + 1} (${nm}): mã ${fmtHS(hs)} không có trong biểu thuế`);
       const p = l.code ? lcFind(l.code) : null;
