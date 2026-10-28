@@ -274,8 +274,8 @@
      → còn lại là "bộ phận" của máy chính: 4 số đầu mã máy chính + "90" (vd quạt 8414.51 → 8414.90.29; máy sấy tóc 8516.31 → 8516.90.90).
      Luôn là GỢI Ý — người dùng xác nhận theo đặc tính thực tế (Chú giải 2 Phần XVI). */
   function genPartDesc(h) {
-    const tr = V.part(enOf(h));
     let pname = '';
+    const tr = V.part(enOf(h), h.parent ? temOf(h.parent).nameVi : '');
     if (h.parent) { const t = temOf(h.parent); pname = `${t.nameVi ? sentence(t.nameVi) : ''}${t.brand ? ' ' + t.brand : ''} ${h.parent}`.replace(/\s+/g, ' ').trim(); }
     else pname = tr.parentVi || '';
     const foc = h.foc !== undefined ? h.foc : tr.foc;
@@ -455,12 +455,13 @@
   }
   /* Dòng Invoice → dòng hàng (tự nhận linh kiện) */
   function linesFromInvoice(list) {
-    const partOf = (x) => V.isPartName(x.name) && !lcFind(x.code);
+    const partOf = (x) => (x.spare || V.isPartName(x.name)) && !lcFind(x.code);
     const mains = list.filter((x) => x.code && !partOf(x)).map((x) => x.code);
     const out = list.map((x) => {
       const amount = has(x.amount) && x.amount > 0 ? x.amount : Math.round(x.qty * x.price * 100) / 100;
-      const base = { id: uid(), code: String(x.code || '').toUpperCase(), qty: x.qty, price: x.price, invAmount: amount, unit: UNIT_MAP[String(x.unit || '').toUpperCase()] || 'PCE' };
-      const isP = partOf(x); const tr = isP ? V.part(x.name) : null;
+      // hàng F.O.C (Invoice ghi "F.O.C" ở cột thành tiền): vẫn khai theo SL × đơn giá, nhưng không có trong tổng Invoice
+      const base = { id: uid(), code: String(x.code || '').toUpperCase(), qty: x.qty, price: x.price, invAmount: x.foc ? undefined : amount, invFoc: !!x.foc, unit: UNIT_MAP[String(x.unit || '').toUpperCase()] || 'PCE' };
+      const isP = partOf(x); const tr = isP ? V.part(x.name) : null; if (tr && x.foc) tr.foc = true;
       if (base.code) {
         const fresh = !modelOf(base.code); const m = ensureModel(base.code, x.name);
         if (fresh && isP) Object.assign(m, { part: true, foc: tr.foc, parent: guessParent(base.code, x.name, mains) });
@@ -489,7 +490,16 @@
     if (k === 'an') { const a = P.an(text); return { res: { arrival: a.arrival, storeCode: a.storeCode, anBl: a.anBl, anVessel: a.anVessel, anFreightUsd: a.anFreightUsd, pod: !L.pod && a.anPod ? 'HO CHI MINH(' + a.anPod + ')' : undefined }, tag }; }
     if (k === 'fr' || k === 'bh') return { fee: await readFee(k, text, pages, xml, guess), tag };
     const res = P[k](text);
-    if (k === 'ci') { delete res.plInv; }
+    if (k === 'ci') {
+      delete res.plInv;
+      // bảng có ô nhiều dòng / cột F.O.C → đọc theo toạ độ; lấy cách đọc ra nhiều dòng hàng hơn
+      // chấm điểm 2 cách đọc: khớp tổng Invoice (bỏ dòng F.O.C) quan trọng nhất, rồi số dòng; hoà thì ưu tiên đọc theo toạ độ
+      const tbl = pages ? P.ciTable(pages) : [];
+      const score = (ls, bonus) => { if (!ls || !ls.length) return -1; const sum = ls.reduce((s0, x) => s0 + (x.foc ? 0 : x.amount || 0), 0);
+        return (res.invTotal && Math.abs(sum - res.invTotal) < 0.01 ? 1000 : 0) + ls.length * 10 + bonus; };
+      if (score(tbl, 1) > score(res.lines, 0)) res.lines = tbl;
+      if (!res.invTotal && res.lines) res.invTotal = res.lines.reduce((s0, x) => s0 + (x.foc ? 0 : x.amount || 0), 0);
+    }
     return { res, tag, text };
   }
   /* Hoá đơn cước / bảo hiểm → các dòng phí, mỗi dòng có ô chọn (đã chọn sẵn: cước quốc tế / phí bảo hiểm) */
@@ -966,7 +976,9 @@
       add(ok ? 'ok' : 'err', ok ? `${name} khớp: ${fmt(v[0].v)} ${unit} (${v.map((x) => x.n).join(', ')})` : `${name} lệch: ` + v.map((x) => `${x.n} ${fmt(x.v)}`).join(' · '));
     };
     const qtyTotal = L.lines.reduce((a, l) => a + (parseNum(l.qty) || 0), 0);
-    const amtTotal = L.lines.reduce((a, l) => a + lineAmt(l), 0);
+    const amtTotal = L.lines.filter((l) => !l.invFoc).reduce((a, l) => a + lineAmt(l), 0);
+    const focLines = L.lines.filter((l) => l.invFoc);
+    if (focLines.length) add('ok', `${focLines.length} dòng hàng F.O.C (Invoice không tính tiền) — khai theo SL × đơn giá trên Invoice: ${fmt(focLines.reduce((a, l) => a + lineAmt(l), 0), 2)} USD, không cộng vào tổng Invoice`);
     cmp('Số kiện', [{ n: 'Bill', v: L.pkgs }, { n: 'PL', v: L.plPkgs }, { n: 'C/O', v: L.coPkgs }], 'kiện');
     cmp('Gross weight', [{ n: 'Bill', v: L.gw }, { n: 'PL', v: L.plGw }, { n: 'C/O', v: L.coGw }], 'kg');
     if (L.lines.length) cmp('Số lượng hàng', [{ n: 'Danh sách hàng', v: qtyTotal }, { n: 'PL', v: L.plQty }], '');

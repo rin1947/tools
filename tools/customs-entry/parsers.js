@@ -157,6 +157,16 @@
     u.split('\n').forEach((line) => {
       if (/^\s*(TOTAL|SUB\s*TOTAL|GRAND|SAY|TỔNG)/.test(line)) return;
       const toks = [...line.matchAll(/(?:US\$|USD|\$)?\s*(\d[\d.,]*)/g)].map((x) => ({ i: x.index, end: x.index + x[0].length, v: num(x[1]), raw: x[1] }));
+      // dòng F.O.C 1 hàng (bản scan): "<mô tả> 40 PCS 0,50 F.O.C"
+      if (/F\.?\s*O\.?\s*C/.test(line) && toks.length >= 2 && Math.abs(toks[0].v - Math.round(toks[0].v)) < 1e-6) {
+        const q = toks[toks.length - 2], pr = toks[toks.length - 1];
+        if (Math.abs(q.v - Math.round(q.v)) < 1e-6 && q.v > 0) {
+          const words = line.slice(0, q.i).trim().split(/\s+/).filter((w) => w && !UNIT_RE.test(w)); if (/^\d{1,3}\.?$/.test(words[0] || '')) words.shift();
+          const ci0 = words.findIndex((w) => /\d/.test(w) && /[A-Z]/.test(w) && w.length >= 3);
+          const code = ci0 >= 0 && ci0 <= 1 ? words.splice(ci0, 1)[0] : '';
+          out.push({ code, name: titleCase(words.join(' ')), qty: q.v, unit: 'PCS', price: pr.v, amount: 0, foc: true, spare: /SPARE|PARTS?\b/.test(line) }); return;
+        }
+      }
       if (toks.length < 3) return;
       let best = null;
       for (let a = 0; a < toks.length - 2; a++) for (let b = a + 1; b < toks.length - 1; b++) for (let c = b + 1; c < toks.length; c++) {
@@ -176,6 +186,54 @@
       const name = words.filter((w) => !UNIT_RE.test(w) && !/^(USD|US\$)$/.test(w)).join(' ');
       const unit = UNIT_RE.test(after) ? after : 'PCS';
       out.push({ code: code.replace(/[.,;:]+$/, ''), name: titleCase(name), qty: toks[best.a].v, unit, price: toks[best.b].v, amount: toks[best.c].v });
+    });
+    return out;
+  }
+
+  /* Invoice PDF có bảng nhiều dòng trong 1 ô (mô tả xuống dòng, cột Thành tiền ghi "F.O.C"…): đọc theo TOẠ ĐỘ.
+     1. Tìm dòng tiêu đề (ITEM / DESCRIPTION / QUANTITY / PRICE / AMOUNT, EN hoặc VN) → vị trí x của từng cột.
+     2. Dòng "neo" = dòng có số ở cột Số lượng. Các dòng chữ khác (phần mô tả xuống dòng trên / dưới) gán cho dòng neo gần nhất theo chiều dọc.
+     3. Thành tiền là "F.O.C" / "FREE" → hàng tặng (foc), không tính vào tổng Invoice. */
+  const COLS = [['qty', /quantity|q'?ty|số\s*lượng|so luong/i], ['price', /unit\s*price|price|đơn\s*giá|don gia/i], ['amount', /amount|total\s*value|thành\s*tiền|thanh tien|value/i],
+    ['code', /^(items?|item\s*no|model|code|art(icle)?|mã)/i], ['desc', /descriptions?|commodity|goods|tên\s*hàng|mô\s*tả|product/i], ['unit', /^(unit|uom|đvt)$/i]];
+  function ciTable(pages) {
+    const out = [];
+    (pages || []).forEach((items) => {
+      const toks = items.filter((t) => String(t.s).trim()).map((t) => ({ s: String(t.s).trim(), x: t.x, y: t.y, w: t.w || 0, cx: t.x + (t.w || 0) / 2 }));
+      // dòng tiêu đề: có cột số lượng và (đơn giá hoặc thành tiền) trên cùng một dải y (±14)
+      const qh = toks.filter((t) => COLS[0][1].test(t.s));
+      let col = null, hy = null;
+      for (const q of qh) {
+        const band = toks.filter((t) => Math.abs(t.y - q.y) <= 14);
+        const c = {};
+        band.forEach((t) => { for (const [k, re] of COLS) if (c[k] === undefined && re.test(t.s)) { c[k] = t.cx; break; } });
+        if (c.price !== undefined || c.amount !== undefined) { col = c; hy = Math.min(...band.map((t) => t.y)); break; }
+      }
+      if (!col) return;
+      const totalTok = toks.find((t) => t.y < hy && /^(total|sub\s*total|grand\s*total|tổng)/i.test(t.s));
+      const floor = totalTok ? totalTok.y + 3 : -1e9;
+      const body = toks.filter((t) => t.y < hy - 2 && t.y > floor);
+      const keys = Object.keys(col);
+      const nearest = (t) => keys.reduce((a, k) => (Math.abs(col[k] - t.cx) < Math.abs(col[a] - t.cx) ? k : a), keys[0]);
+      body.forEach((t) => { t.col = nearest(t); });
+      const isNum = (s) => /^[$¥€]?\s*-?\d[\d.,]*$/.test(s.replace(/^(USD|US\$)/i, '').trim());
+      const anchorsY = [...new Set(body.filter((t) => t.col === 'qty' && isNum(t.s) && num(t.s.replace(/[^\d.,-]/g, '')) > 0).map((t) => Math.round(t.y)))].sort((a, b) => b - a);
+      if (!anchorsY.length) return;
+      const rows = anchorsY.map((y) => ({ y, toks: [] }));
+      body.forEach((t) => { const r = rows.reduce((a, b) => (Math.abs(b.y - t.y) < Math.abs(a.y - t.y) ? b : a)); r.toks.push(t); });
+      rows.forEach((r) => {
+        const cell = (k) => r.toks.filter((t) => t.col === k).sort((a, b) => b.y - a.y || a.x - b.x).map((t) => t.s).join(' ').replace(/\s+/g, ' ').replace(/-\s+(?=[A-Z0-9])/g, '-').trim();
+        const n = (k) => { const v = cell(k).replace(/^(USD|US\$)/i, '').replace(/[^\d.,-]/g, ''); return v ? num(v) : NaN; };
+        const qty = n('qty'); const price = n('price'); const amtTxt = cell('amount');
+        const foc = /F\.?\s*O\.?\s*C|FREE/i.test(amtTxt);
+        let amount = foc ? 0 : n('amount'); if (!(amount >= 0) && qty > 0 && price > 0) amount = Math.round(qty * price * 100) / 100;
+        let code = cell('code'); let name = cell('desc');
+        if (col.code === undefined || !code) { const m = name.match(/^([A-Z0-9][A-Z0-9\-\/.]{2,})\s+(.*)$/i); if (m && /\d/.test(m[1])) { code = m[1]; name = m[2]; } }
+        const spare = /spare|parts?|accessor|phụ\s*kiện|linh\s*kiện/i.test(code);
+        if (!/\d/.test(code)) code = '';
+        if (!(qty > 0)) return;
+        out.push({ code: code.toUpperCase(), name: name || cell('code'), qty, unit: cell('unit') || 'PCS', price: price || 0, amount, foc, spare });
+      });
     });
     return out;
   }
@@ -406,7 +464,7 @@
     return starts.map((st, n) => tem(lines.slice(st, n + 1 < starts.length ? starts[n + 1] : undefined).join('\n'))).filter((x) => x.model || x.nameVi);
   }
 
-  const API = { num, findDates, linesFromPdfPages, classify, ciGeneric, sheetRows, bill, ci, pl, co, contract, tem, tems, an, feeKind, feeLines, fixOcrDigits, POL, POD };
+  const API = { num, findDates, linesFromPdfPages, classify, ciGeneric, ciTable, sheetRows, bill, ci, pl, co, contract, tem, tems, an, feeKind, feeLines, fixOcrDigits, POL, POD };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else root.CustomsParsers = API;
 })(typeof window !== 'undefined' ? window : globalThis);

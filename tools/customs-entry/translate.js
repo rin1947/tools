@@ -211,7 +211,10 @@
     ['decorative ring', 'vòng viền trang trí'], ['ring', 'vòng viền'], ['nozzle', 'đầu thổi'], ['concentrator', 'đầu thổi tập trung'], ['diffuser', 'đầu khuếch tán'],
     ['inner parts', 'chi tiết bên trong'], ['internal parts', 'chi tiết bên trong'], ['inner part', 'chi tiết bên trong'],
     ['dc motor', 'động cơ một chiều'], ['ac motor', 'động cơ xoay chiều'], ['motor', 'động cơ'], ['fan blade', 'cánh quạt'], ['impeller', 'cánh quạt'], ['blade assembly', 'cụm lưỡi dao'],
-    ['knife', 'lưỡi dao'], ['cutter', 'lưỡi dao'], ['blade', 'cánh'], ['front grill', 'lồng quạt trước'], ['rear grill', 'lồng quạt sau'], ['front guard', 'lồng quạt trước'], ['rear guard', 'lồng quạt sau'],
+    ['knife', 'lưỡi dao'], ['cutter', 'lưỡi dao'], ['blades', 'lưỡi dao'], ['blade', 'lưỡi dao'],
+    ['rubber feet', 'chân đế cao su'], ['feet', 'chân đế'], ['foot', 'chân đế'], ['drive socket', 'khớp nối truyền động'], ['drive coupling', 'khớp nối truyền động'], ['coupling', 'khớp nối'],
+    ['cup mat', 'tấm lót cối'], ['mat', 'tấm lót'], ['pad', 'miếng đệm'], ['opener', 'dụng cụ mở nắp'], ['tamper', 'que nhấn'], ['spatula', 'thìa vét'], ['scraper', 'dụng cụ vét'],
+    ['measuring cup', 'cốc đong'], ['funnel', 'phễu'], ['strainer', 'lưới lọc'], ['sieve', 'rây lọc'], ['shaft', 'trục'], ['bushing', 'bạc lót'], ['washer', 'vòng đệm'], ['front grill', 'lồng quạt trước'], ['rear grill', 'lồng quạt sau'], ['front guard', 'lồng quạt trước'], ['rear guard', 'lồng quạt sau'],
     ['grill', 'lồng quạt'], ['guard', 'lồng bảo vệ'], ['base', 'đế'], ['stand', 'chân đế'], ['pole', 'trụ'], ['pillar', 'trụ'], ['column', 'trụ'], ['tube', 'ống'], ['pipe', 'ống'], ['hose', 'ống mềm'],
     ['control panel', 'bảng điều khiển'], ['control board', 'bo mạch điều khiển'], ['main board', 'bo mạch chính'], ['circuit board', 'bo mạch'], ['pcba', 'bo mạch'], ['pcb', 'bo mạch'],
     ['display board', 'bo mạch hiển thị'], ['display', 'màn hình hiển thị'], ['remote control', 'điều khiển từ xa'], ['remote', 'điều khiển từ xa'], ['power cord', 'dây nguồn'], ['power cable', 'dây nguồn'],
@@ -242,14 +245,22 @@
     const rest = phrasePieces(t, WHOLE).filter((p) => p.raw).map((p) => p.raw).join(' ');
     return PART_RE.test(rest);
   }
-  function part(en) {
+  function part(en, ctx) {
     let t = clean(en).replace(/[“”"]/g, '');
     const foc = /\bf\.?\s*o\.?\s*c\.?\b|free\s*of\s*charge|\bfree\b/i.test(t);
     const plated = /chrome[\s-]*plated|chromed|mạ crôm/i.test(t);
     t = t.replace(/\bf\.?\s*o\.?\s*c\.?\b|free\s*of\s*charge|\bfree\b|chrome[\s-]*plated|chromed/gi, ' ');
-    // phần sau "for / of / used for" là sản phẩm chính → bỏ (mô tả linh kiện tự ghép tên sản phẩm chính)
-    const parentHint = (t.match(/\b(?:for|of|used for|suitable for)\b\s+(.+)$/i) || [])[1] || '';
-    t = t.replace(/\b(?:for|of|used for|suitable for)\b\s+.+$/i, ' ');
+    // phần "(Compatible with X)" / "for X" / "of X" là máy chính → bỏ (mô tả linh kiện tự ghép tên máy chính)
+    const PAR_RE = /\(?\s*\b(?:compatible\s+with|suitable\s+for|used\s+for|for|of|fits?)\b\s+([^)\]]+)\)?/i;
+    const parentHint = (t.match(PAR_RE) || [])[1] || '';
+    t = t.replace(new RegExp(PAR_RE.source, 'gi'), ' ').replace(/\[[^\]]*\]/g, ' ').replace(/:/g, ' ');
+    // thông số giữ nguyên (27MM, 2L, 1.5L), thuộc tính hay gặp dịch riêng
+    const dims = [...t.matchAll(/\b\d+(?:[.,]\d+)?\s?(?:mm|cm|m|l|ml|w|v|kg|g|inch|")\b/gi)].map((x) => x[0].replace(/\s/g, '').toUpperCase());
+    const attrs = [];
+    if (/food[\s-]*grade/i.test(t)) attrs.push('đạt chuẩn thực phẩm');
+    const nb = t.match(/\b(\d+)\s*(blades|leaves|wings)\b/i); if (nb) attrs.push(`loại ${nb[1]} ${/blade/i.test(nb[2]) && !/quạt|quat|fan/i.test(ctx || '') ? 'lưỡi' : 'cánh'}`);
+    t = t.replace(/food[\s-]*grade/gi, ' ').replace(/\b\d+\s*(blades|leaves|wings)\b/gi, ' ').replace(/\b\d+(?:[.,]\d+)?\s?(?:mm|cm|m|l|ml|w|v|kg|g|inch|")\b/gi, ' ');
+    if (/quạt|quat|\bfan\b/i.test(ctx || '')) t = t.replace(/(?<!fan\s)\bblades?\b/gi, 'fan blade');
     let tl = low(t.replace(/[()]/g, ' , '));
     const mats = [];
     MATS.slice().sort((a, b) => b[0].length - a[0].length).forEach(([en2, vi]) => {
@@ -260,7 +271,7 @@
     const withParts = tl.split(/\s*\/\s*/);
     const segs = withParts.length > 1 ? null : tl.split(/\s*[,&]\s*/).map((x) => x.trim()).filter(Boolean);
     if (!segs) {
-      const w = withParts.map((x) => part(x).vi.toLowerCase()).filter(Boolean);
+      const w = withParts.map((x) => part(x, ctx).vi.toLowerCase()).filter(Boolean);
       let v = w.join(' kèm '); if (plated) v += ' mạ crôm'; if (mats.length) v += ' bằng ' + mats.join(' và ');
       return { vi: v.charAt(0).toUpperCase() + v.slice(1), foc, unknown: [], parentHint: clean(parentHint), parentVi: parentHint ? product(parentHint.replace(/\S*\d\S*/g, ' ')).known : '' };
     }
@@ -273,9 +284,12 @@
       else if (seg) viSegs.push(seg);
     });
     let vi = viSegs.join(' và ');
+    if (dims.length) vi += ' ' + dims.join(' ');
+    if (attrs.includes('loại') || attrs.some((a) => a.startsWith('loại'))) vi += ' ' + attrs.filter((a) => a.startsWith('loại')).join(' ');
     if (plated) vi += ' mạ crôm';
     if (mats.length) vi += ' bằng ' + mats.join(' và ');
-    vi = vi.trim(); vi = vi.charAt(0).toUpperCase() + vi.slice(1);
+    attrs.filter((a) => !a.startsWith('loại')).forEach((a) => { vi += ' ' + a; });
+    vi = vi.replace(/\s+/g, ' ').trim(); vi = vi.charAt(0).toUpperCase() + vi.slice(1);
     return { vi, foc, unknown, parentHint: clean(parentHint), parentVi: parentHint ? product(parentHint.replace(/\S*\d\S*/g, ' ')).known : '' };
   }
 
