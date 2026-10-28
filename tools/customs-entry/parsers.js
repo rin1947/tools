@@ -62,11 +62,16 @@
   function linesFromPdfPages(pages) {
     const lines = [];
     pages.forEach((items) => {
-      const rows = {};
-      items.forEach((it) => { if (!String(it.s).trim()) return; const y = Math.round(it.y / 3) * 3; (rows[y] = rows[y] || []).push(it); });
+      // gom mảnh chữ cùng hàng: lệch y ≤ ~40% cỡ chữ (không chia theo ô cố định để khỏi tách 1 hàng thành 2)
+      const rowsArr = [];
+      items.filter((it) => String(it.s).trim()).sort((a, b) => b.y - a.y).forEach((it) => {
+        const tol = Math.max(2, (it.h || 8) * 0.4);
+        const r = rowsArr.find((x) => Math.abs(x.y - it.y) <= tol);
+        if (r) r.items.push(it); else rowsArr.push({ y: it.y, items: [it] });
+      });
       // mảnh chữ sát nhau (vd "HÓA ĐƠ" + "N") ghép liền, cách xa thì thêm khoảng trắng
-      Object.keys(rows).map(Number).sort((a, b) => b - a).forEach((y) => {
-        const it = rows[y].sort((a, b) => a.x - b.x); let out = '';
+      rowsArr.sort((a, b) => b.y - a.y).forEach((row) => {
+        const it = row.items.sort((a, b) => a.x - b.x); let out = '';
         it.forEach((o, k) => {
           const prev = it[k - 1];
           const gap = prev && prev.w ? o.x - (prev.x + prev.w) : 99;
@@ -112,6 +117,12 @@
     }
     for (const k in POL) { if (L.some((s) => s === k) || new RegExp('PORT OF LOADING[^\\n]*' + k).test(u)) { o.pol = k; break; } }
     if (!o.pol) for (const k in POL) { if (u.includes(k)) { o.pol = k; break; } }
+    // HBL không ghi nhãn: tên tàu + số chuyến thường nằm cùng hàng, ngay trước cảng xếp (vd "IAL 001 S230 NANSHA,CHINA")
+    if (!o.vessel && o.pol) {
+      const vl = L.find((s) => new RegExp('^(.+?)\\s+' + o.pol + '\\b').test(s) && !/PORT|PLACE|LOADING|RECEIPT/.test(s));
+      const v = vl && vl.match(new RegExp('^(.+?)\\s+' + o.pol + '\\b'))[1].trim();
+      if (v && /[A-Z]/.test(v) && /\d/.test(v) && v.length <= 40) o.vessel = v;
+    }
     for (const [re] of POD) {
       const mm = u.match(new RegExp('HO CHI MINH\\s*\\(?\\s*(' + re.source + ')\\s*\\)?', 'i'));
       if (mm) { o.pod = 'HO CHI MINH(' + mm[1].toUpperCase() + ')'; break; }
@@ -122,7 +133,8 @@
     if ((m = u.match(/(\d[\d,.]*)\s*(?:CARTONS|CTNS|PACKAGES|PKGS)\b/))) o.pkgs = num(m[1]);
     if ((m = u.match(/(\d[\d,.]*)\s*KGS?\b/))) o.gw = num(m[1]);
     if ((m = u.match(/(\d[\d,.]*)\s*CBM\b/))) o.cbm = num(m[1]);
-    if ((m = u.match(/HS\s*CODE\s*:?\s*([\d.]{4,12})/))) o.blHs = m[1].replace(/\D/g, '');
+    const hsAll = [...u.matchAll(/HS\s*CODE\s*:?\s*([\d.]{4,12})/g)].map((x) => x[1].replace(/\D/g, ''));
+    if (hsAll.length) o.blHs = [...new Set(hsAll)].join(',');
     return o;
   }
 

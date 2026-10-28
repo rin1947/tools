@@ -359,7 +359,8 @@
     window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js';
     return window.pdfjsLib;
   }
-  async function openPdf(file) { const pdfjs = await loadPdfJs(); return pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise; }
+  // cMap: PDF dùng font Trung Quốc / CJK (vd vận đơn của forwarder TQ) cần bảng mã này mới đọc được chữ
+  async function openPdf(file) { const pdfjs = await loadPdfJs(); return pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), cMapUrl: PDFJS + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS + 'standard_fonts/' }).promise; }
   async function pdfPages(doc) {
     const pages = [];
     for (let i = 1; i <= Math.min(doc.numPages, 6); i++) {
@@ -443,6 +444,14 @@
   ];
   const DOCNAME = Object.fromEntries(DOC_TYPES.map((d) => [d[0], d[1].replace(/^\S+\s/, '')]));
   DOCNAME.vat = 'hoá đơn GTGT'; DOCNAME.fee = 'debit note';
+  const SLOT_FIELDS = {
+    bill: ['blNo', 'blDate', 'vessel', 'pol', 'pod', 'cont', 'pkgs', 'gw', 'cbm', 'blHs'],
+    ci: ['invNo', 'invDate', 'incoterm', 'invTotal'],
+    pl: ['plInv', 'plQty', 'plPkgs', 'plGw', 'plNw'],
+    co: ['coNo', 'coForm', 'coDate', 'coPkgs', 'coGw', 'coText'],
+    an: ['arrival', 'storeCode', 'anBl', 'anVessel', 'anFreightUsd'],
+    fr: ['freight', 'freightCur'], bh: ['ins', 'insCur'],
+  };
   const SLOT_OK = { fr: ['vat', 'fee'], bh: ['vat', 'fee'], an: [], hd: [] };
   L.docSet = L.docSet || {}; L.feeDoc = L.feeDoc || {};
   let busy = false;
@@ -540,6 +549,9 @@
       if (L.sample) L = newLot();
       if (L.docs[k]) clearSlot(k, true);                        // nạp lại → bỏ dữ liệu của file cũ trước
       const before = JSON.parse(JSON.stringify(L));
+      // xoá sạch các ô thuộc loại chứng từ này (kể cả dữ liệu cũ nạp từ bản tool trước) để không lẫn thông tin file cũ
+      (SLOT_FIELDS[k] || []).forEach((kk) => { delete L[kk]; });
+      if (k === 'ci') L.lines = [];
       const supsBefore = JSON.parse(JSON.stringify(S.sups));
       const r = await readSlot(k, f);
       let info = '';
@@ -1001,7 +1013,8 @@
     if (L.coNo) add('ok', `Có C/O Form ${L.coForm || 'E'} số ${L.coNo}: thuế NK theo ${String(L.coForm || 'E').toUpperCase() === 'E' ? 'ACFTA' : 'MFN (form khác E: tự kiểm tra biểu thuế)'}, số C/O đã ghép vào phần ghi chú`);
     else if (L.lines.length) add('warn', 'Chưa có C/O: thuế NK tính theo MFN');
     if (L.blHs && L.lines.length) {
-      const bad = L.lines.filter((l) => lineHS(l) && !lineHS(l).startsWith(L.blHs.slice(0, 4)));
+      const heads = String(L.blHs).split(',').map((h) => h.slice(0, 4));
+      const bad = L.lines.filter((l) => lineHS(l) && !heads.includes(lineHS(l).slice(0, 4)));
       if (bad.length) add('warn', `HS trên Bill là ${L.blHs}, khác nhóm với dòng ${bad.map((l) => l.code || '?').join(', ')} — xem lại`);
     }
     // Arrival Notice, hoá đơn cước / bảo hiểm
