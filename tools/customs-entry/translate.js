@@ -46,7 +46,7 @@
     ['intelligent', 'Thông minh'], ['smart', 'Thông minh'], ['technology', 'Công nghệ'], ['tech', 'Công nghệ'], ['electronics', 'Điện tử'], ['electronic', 'Điện tử'],
     ['electrical', 'Điện'], ['electric', 'Điện'], ['industrial', 'Công nghiệp'], ['industry', 'Công nghiệp'], ['trading', 'Thương mại'], ['trade', 'Thương mại'],
     ['commercial', 'Thương mại'], ['manufacturing', 'Sản xuất'], ['manufacture', 'Sản xuất'], ['plastic', 'Nhựa'], ['plastics', 'Nhựa'], ['metal', 'Kim loại'],
-    ['hardware', 'Ngũ kim'], ['kitchenware', 'Đồ dùng nhà bếp'], ['kitchen', 'Nhà bếp'], ['houseware', 'Đồ gia dụng'], ['housewares', 'Đồ gia dụng'],
+    ['hardware', 'Ngũ kim'], ['mold', 'Khuôn mẫu'], ['mould', 'Khuôn mẫu'], ['kitchenware', 'Đồ dùng nhà bếp'], ['kitchen', 'Nhà bếp'], ['houseware', 'Đồ gia dụng'], ['housewares', 'Đồ gia dụng'],
     ['development', 'Phát triển'], ['international', 'Quốc tế'], ['industrial development', 'Phát triển Công nghiệp'], ['supply chain', 'Chuỗi cung ứng'],
     ['motor', 'Động cơ'], ['machinery', 'Máy móc'], ['products', 'Sản phẩm'], ['product', 'Sản phẩm'], ['enterprise', 'Doanh nghiệp'],
   ];
@@ -72,7 +72,7 @@
     ['binhai economic development zone', 'Khu Phát triển Kinh tế ven biển'], ['economic and technological development zone', 'Khu Phát triển Kinh tế - Kỹ thuật'],
     ['economic technological development zone', 'Khu Phát triển Kinh tế - Kỹ thuật'], ['economic development zone', 'Khu Phát triển Kinh tế'],
     ['high tech industrial development zone', 'Khu Phát triển Công nghiệp Công nghệ cao'], ['high tech zone', 'Khu Công nghệ cao'], ['hi tech zone', 'Khu Công nghệ cao'],
-    ['industrial park', 'Khu công nghiệp'], ['industrial zone', 'Khu công nghiệp'], ['industrial area', 'Khu công nghiệp'], ['industry park', 'Khu công nghiệp'],
+    ['industry zone', 'Khu công nghiệp'], ['industrial park', 'Khu công nghiệp'], ['industrial zone', 'Khu công nghiệp'], ['industrial area', 'Khu công nghiệp'], ['industry park', 'Khu công nghiệp'],
     ['development zone', 'Khu Phát triển'], ['free trade zone', 'Khu Thương mại tự do'], ['science park', 'Khu Khoa học'],
   ];
   const COUNTRY = { CN: 'Trung Quốc', VN: 'Việt Nam', TH: 'Thái Lan', MY: 'Malaysia', ID: 'Indonesia', KR: 'Hàn Quốc', JP: 'Nhật Bản', TW: 'Đài Loan', HK: 'Hồng Kông',
@@ -206,10 +206,10 @@
     ['main body', 'thân máy chính'], ['main housing', 'vỏ thân máy chính'], ['body', 'thân máy'], ['housing', 'vỏ'], ['shell', 'vỏ'], ['casing', 'vỏ'], ['enclosure', 'vỏ'],
     ['body cover', 'vỏ bọc thân máy'], ['handle cover', 'vỏ tay cầm'], ['handle shell', 'vỏ tay cầm'], ['front cover', 'nắp trước'], ['back cover', 'nắp sau'], ['rear cover', 'nắp sau'],
     ['top cover', 'nắp trên'], ['bottom cover', 'nắp đáy'], ['side cover', 'nắp bên'], ['cover', 'nắp'], ['lid', 'nắp'], ['cap', 'nắp'], ['handle', 'tay cầm'],
-    ['air inlet filter', 'lưới lọc gió đầu vào'], ['inlet filter', 'lưới lọc gió đầu vào'], ['air filter', 'lưới lọc gió'], ['filter screen', 'lưới lọc'], ['filter', 'lưới lọc'],
-    ['heat insulation sheet', 'tấm cách nhiệt'], ['heat insulation', 'tấm cách nhiệt'], ['insulation sheet', 'tấm cách nhiệt'], ['heat shield', 'tấm cách nhiệt'], ['mica sheet', 'tấm mica cách nhiệt'],
-    ['decorative ring', 'vòng viền trang trí'], ['ring', 'vòng viền'], ['nozzle', 'đầu thổi'], ['concentrator', 'đầu thổi tập trung'], ['diffuser', 'đầu khuếch tán'],
-    ['inner parts', 'chi tiết bên trong'], ['internal parts', 'chi tiết bên trong'], ['inner part', 'chi tiết bên trong'],
+    ['air inlet filter', 'lưới lọc gió đầu vào'], ['inlet air filter', 'lưới lọc gió đầu vào'], ['air intake filter', 'lưới lọc gió đầu vào'], ['inlet filter', 'lưới lọc gió đầu vào'], ['air filter', 'lưới lọc gió'], ['filter screen', 'lưới lọc'], ['filter', 'lưới lọc'],
+    ['insulation inner', 'tấm cách nhiệt bên trong'], ['inner insulation', 'tấm cách nhiệt bên trong'], ['insulation', 'tấm cách nhiệt'], ['heat insulation sheet', 'tấm cách nhiệt'], ['heat insulation', 'tấm cách nhiệt'], ['insulation sheet', 'tấm cách nhiệt'], ['heat shield', 'tấm cách nhiệt'], ['mica sheet', 'tấm mica cách nhiệt'],
+    ['decorative ring', 'vòng viền trang trí'], ['front ring', 'vòng viền đầu thổi'], ['fron ring', 'vòng viền đầu thổi'], ['nozzle ring', 'vòng viền đầu thổi'], ['ring', 'vòng viền'], ['nozzle', 'đầu thổi'], ['concentrator', 'đầu thổi tập trung'], ['diffuser', 'đầu khuếch tán'],
+    ['inside handle parts', 'chi tiết bên trong tay cầm'], ['inside handle part', 'chi tiết bên trong tay cầm'], ['inside parts', 'chi tiết bên trong'], ['inside part', 'chi tiết bên trong'], ['inner parts', 'chi tiết bên trong'], ['internal parts', 'chi tiết bên trong'], ['inner part', 'chi tiết bên trong'],
     ['dc motor', 'động cơ một chiều'], ['ac motor', 'động cơ xoay chiều'], ['motor', 'động cơ'], ['fan blade', 'cánh quạt'], ['impeller', 'cánh quạt'], ['blade assembly', 'cụm lưỡi dao'],
     ['knife', 'lưỡi dao'], ['cutter', 'lưỡi dao'], ['blades', 'lưỡi dao'], ['blade', 'lưỡi dao'],
     ['rubber feet', 'chân đế cao su'], ['feet', 'chân đế'], ['foot', 'chân đế'], ['drive socket', 'khớp nối truyền động'], ['drive coupling', 'khớp nối truyền động'], ['coupling', 'khớp nối'],
@@ -248,8 +248,8 @@
   function part(en, ctx) {
     let t = clean(en).replace(/[“”"]/g, '');
     const foc = /\bf\.?\s*o\.?\s*c\.?\b|free\s*of\s*charge|\bfree\b/i.test(t);
-    const plated = /chrome[\s-]*plated|chromed|mạ crôm/i.test(t);
-    t = t.replace(/\bf\.?\s*o\.?\s*c\.?\b|free\s*of\s*charge|\bfree\b|chrome[\s-]*plated|chromed/gi, ' ');
+    const plated = /chrome|chromed|mạ crôm/i.test(t);
+    t = t.replace(/\bf\.?\s*o\.?\s*c\.?\b|free\s*of\s*charge|\bfree\b|chrome[\s-]*plated|chromed|\bchrome\b/gi, ' ').replace(/\+/g, ' and ');
     // phần "(Compatible with X)" / "for X" / "of X" là máy chính → bỏ (mô tả linh kiện tự ghép tên máy chính)
     const PAR_RE = /\(?\s*\b(?:compatible\s+with|suitable\s+for|used\s+for|for|of|fits?)\b\s+([^)\]]+)\)?/i;
     const parentHint = (t.match(PAR_RE) || [])[1] || '';
