@@ -1,31 +1,25 @@
 /* =========================================================
-   Phiếu khai nhanh ECUS — LOGIC
+   Danh sách hàng khai hải quan — LOGIC
    ---------------------------------------------------------
-   • Đọc chứng từ (parsers.js): Bill, Invoice, Packing List, C/O, HỢP ĐỒNG.
-       PDF có chữ → pdf.js; PDF scan / ảnh → OCR tesseract.js chạy trên máy; Word .docx → JSZip.
-       Hợp đồng → số HĐ, ngày ký, ngày hết hạn, tên + địa chỉ bên bán, nhãn hiệu → lưu vào hồ sơ NCC
-       (địa chỉ tách 4 dòng chữ in cho ECUS; bản tiếng Việt cho tem phụ — translate.js).
-   • Mã HS + thuế suất: biểu thuế của tool Landed Cost (../landed-cost/tariff-data.js, hoặc biểu thuế
-     người dùng nạp trong Landed Cost — IndexedDB 'landedcost' / khoá 'tariff') + điều chỉnh 'lc_ovr'.
-       Thuế NK = ACFTA nếu có C/O Form E và xuất xứ CN (không thuộc danh sách loại trừ), ngược lại MFN.
+   Quy trình: chứng từ (Invoice, Packing List, hợp đồng…) nhờ AI đọc → điền vào FORM MẪU Excel (Mau-Danh-Sach-Hang.xlsx)
+   → nạp form vào tool → tool hoàn thiện mô tả tiếng Việt, mã HS, tem phụ → xuất file danh sách hàng .xls cho ECUS5.
+   • Mã HS + thuế suất: biểu thuế của tool Landed Cost (../landed-cost/tariff-data.js, hoặc biểu thuế người dùng
+     nạp trong Landed Cost — IndexedDB 'landedcost' / khoá 'tariff') + điều chỉnh 'lc_ovr'.
+       Thuế NK = ACFTA nếu dòng có C/O Form E và xuất xứ CN (không thuộc danh sách loại trừ), ngược lại MFN.
        VAT    = cột VAT của biểu thuế; 8% chỉ đến 31/12/2026 (NQ 204/2025/QH15), sau đó tạm tính 10%.
-     Mã HS của từng model lấy từ sản phẩm cùng mã trong Landed Cost (localStorage 'lc_products'),
-     tra thêm theo từ khoá trong biểu thuế. Không ghi ngược vào dữ liệu của Landed Cost.
+     Mã HS của model lấy từ sản phẩm cùng mã trong Landed Cost ('lc_products'), bảng từ khoá KEYWORDS của
+     Landed Cost và tra biểu thuế. Không ghi ngược vào dữ liệu của Landed Cost.
    • Thư viện model (lưu trên máy): mã HS, ĐVT, thông tin TEM PHỤ (tiếng Việt), hình, mô tả khai HQ.
        Mô tả khai HQ tự tạo từ tem: "<model>- <Tên hàng> <Nhãn hiệu> <model>; thương hiệu …; <đặc điểm>;
-       Điện áp: …, Công suất: …; <quy cách>; hàng mới 100%" — sửa tay thì giữ bản sửa tay.
-   • Ước tính thuế:
-       Trị giá dòng (USD)   = SL × đơn giá
-       Trị giá tính thuế    = trị giá dòng × tỷ giá + (cước + bảo hiểm) × trị giá dòng / tổng trị giá
-                              (FOB / EXW / FCA cộng cước + bảo hiểm; CFR/CNF chỉ cộng bảo hiểm; CIF không cộng)
-       Thuế NK  = trị giá tính thuế × %NK ;  Thuế VAT = (trị giá tính thuế + thuế NK) × %VAT
+       Điện áp: …, Công suất: …; <quy cách>; hàng mới 100%" — form có mô tả / sửa tay thì giữ bản đó.
+   • Linh kiện (không tem): mô tả dịch từ tên tiếng Anh + máy chính; HS gợi ý theo nhóm "bộ phận" của máy chính.
    • Xuất file danh sách hàng .xls (biff8) đúng 25 cột mẫu import ECUS5.
    ========================================================= */
 (function () {
   const { parseNum, store } = GauBep;
   const P = window.CustomsParsers;
   const V = window.ViDict;
-  GauBep.mountLayout({ title: 'Phiếu khai nhanh ECUS', icon: '🛃' });
+  GauBep.mountLayout({ title: 'Danh sách hàng khai HQ', icon: '🛃' });
   document.getElementById('bamboo').outerHTML = GauBep.bamboo();
 
   const KEY_SET = 'customs-entry-settings:v1';
@@ -44,21 +38,13 @@
   const UNIT_MAP = { PCS: 'PCE', PC: 'PCE', UNIT: 'PCE', UNITS: 'PCE', SETS: 'SET', SET: 'SET' };
   const uid = () => Math.random().toString(36).slice(2, 9);
   const loadScript = (src) => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('Không tải được thư viện (kiểm tra mạng)')); document.head.append(s); });
-
   /* ======================= TRẠNG THÁI ======================= */
   const DEF_GEN = {
-    loaiHinh: 'A11', coQuan: '', boPhan: '', pttt: 'TTR', ptvc: '9999', mpltg: '6', btFormE: 'B05', btVat: 'VB245',
-    importerName: '', importerAddr: '',
+    btFormE: 'B05', btVat: 'VB245', importerName: '', importerAddr: '',
     usage: 'Hướng dẫn sử dụng, cảnh báo an toàn: xem trên tài liệu đính kèm', storage: 'Hướng dẫn bảo quản: Nơi khô ráo, thoáng mát, tránh va đập.',
   };
   const GEN_FIELDS = [
-    ['loaiHinh', 'Mã loại hình', 'A11 = nhập kinh doanh tiêu dùng'],
-    ['coQuan', 'Cơ quan hải quan', 'Tên/mã chi cục tiếp nhận tờ khai, như trên tờ khai cũ'],
-    ['boPhan', 'Mã bộ phận xử lý', ''],
-    ['pttt', 'Phương thức thanh toán', 'vd TTR, LC, KC'],
-    ['ptvc', 'Mã phương tiện vận chuyển', '9999 = tàu biển chưa có mã'],
-    ['mpltg', 'Mã phân loại khai trị giá', ''],
-    ['btFormE', 'Mã biểu thuế NK khi có Form E', 'Ghi vào cột "Mã biểu thuế NK" của file danh sách hàng'],
+    ['btFormE', 'Mã biểu thuế NK khi có C/O Form E', 'Ghi vào cột "Mã biểu thuế NK" của file danh sách hàng'],
     ['btVat', 'Mã biểu thuế VAT', 'Ghi vào cột "Mã biểu thuế VAT" (vd mã áp dụng VAT 8%)'],
   ];
   const TEM_GEN = [
@@ -67,16 +53,20 @@
     ['usage', 'Tem phụ — dòng hướng dẫn sử dụng', ''],
     ['storage', 'Tem phụ — dòng hướng dẫn bảo quản', ''],
   ];
-  let S = store.get(KEY_SET, null) || { gen: {}, sups: [], models: {} };
-  S.gen = { ...DEF_GEN, ...(S.gen || {}) }; S.sups = S.sups || []; S.models = S.models || {};
-  // bản cũ: model có mô tả gõ sẵn mà chưa có tem → giữ mô tả đó (coi như sửa tay)
+  let S = store.get(KEY_SET, null) || { gen: {}, models: {} };
+  S.gen = { ...DEF_GEN, ...(S.gen || {}) }; S.models = S.models || {}; S.sups = S.sups || [];
   Object.values(S.models).forEach((m) => { if (!m.tem) { m.tem = {}; if (m.desc && m.descManual === undefined) m.descManual = true; } });
-  const newLot = () => ({ docs: {}, docSet: {}, feeDoc: {}, supId: (S.sups[0] || {}).id || '', origin: 'CN', lines: [] });
+  const newLot = () => ({ name: '', lines: [] });
   let L = store.get(KEY_LOT, null) || newLot();
-  L.docs = L.docs || {}; L.lines = L.lines || [];
+  L.lines = L.lines || [];
   const saveSet = () => store.set(KEY_SET, S);
   const saveLot = () => store.set(KEY_LOT, L);
-  const sup = () => S.sups.find((x) => x.id === L.supId) || {};
+  // Nhà cung cấp (bản trước) — chỉ còn dùng làm nguồn tên / địa chỉ NSX nếu đã lưu
+  const sup = () => {
+    const m = L.lines.map((l) => modelOf(l.code)).find((x) => x && x.supId);
+    return (m && S.sups.find((x) => x.id === m.supId)) || {};
+  };
+  const lineOrigin = (l) => String((l && l.origin) || 'CN').toUpperCase();
 
   /* ======================= BIỂU THUẾ (từ Landed Cost) ======================= */
   let DB = null, DBsrc = '';
@@ -125,7 +115,7 @@
   }
   const shortDesc = (r) => String(r[1] || '').split(' › ').slice(-2).join(' › ');
   /* Thuế suất cho 1 mã HS theo C/O của lô */
-  function rateOf(hs) {
+  function rateOf(hs, l) {
     hs = String(hs || '').replace(/\D/g, '');
     if (!DB || hs.length !== 8) return null;
     const r = DB.map.get(hs); if (!r) return { bad: true };
@@ -133,11 +123,11 @@
     const g = (k) => r[DB.ci[k]];
     let mfn = parseRate(g('mfn')); const om = ovr(hs, 'mfn', today); if (om) mfn = { v: om.v, ex: [] };
     let acfta = parseRate(g('acfta')); const oa = ovr(hs, 'acfta', today); if (oa) acfta = { v: oa.v, ex: [] };
-    if (acfta && acfta.ex.includes(String(L.origin || 'CN').toUpperCase())) acfta = null;
+    if (acfta && acfta.ex.includes(lineOrigin(l))) acfta = null;
     let vat = parseFloat(g('vat')); if (isNaN(vat)) vat = 10;
     if (vat === 8 && today > '2026-12-31') vat = 10;
     const ov = ovr(hs, 'vat', today); if (ov) vat = ov.v;
-    const formE = has(L.coNo) && String(L.coForm || 'E').toUpperCase() === 'E' && String(L.origin || '').toUpperCase() === 'CN';
+    const formE = !!(l && l.co) && lineOrigin(l) === 'CN';
     const useE = formE && acfta;
     return { desc: shortDesc(r), mfn: mfn && mfn.v, acfta: acfta && acfta.v, nk: useE ? acfta.v : (mfn ? mfn.v : NaN), src: useE ? 'ACFTA' : 'MFN', vat, formE };
   }
@@ -199,7 +189,7 @@
     let m = modelOf(code);
     if (m) { if (invName && !m.invName) m.invName = invName; return m; }
     const p = lcFind(code);
-    m = S.models[code] = { hs: lcHS(p), hsSrc: lcHS(p) ? 'lc' : '', unit: 'PCE', bt: '', desc: '', descManual: false, tem: {}, img: '', invName: invName || '', supId: L.supId || '' };
+    m = S.models[code] = { hs: lcHS(p), hsSrc: lcHS(p) ? 'lc' : '', unit: 'PCE', bt: '', desc: '', descManual: false, tem: {}, img: '', invName: invName || '' };
     saveSet();
     return m;
   }
@@ -215,7 +205,6 @@
   const lineDesc = (l) => { const h = peek(l); if (h.part) return h.descManual && h.desc ? h.desc : genPartDesc(h); return l.code ? descOf(l.code) : l.desc || ''; };
   const mainCodes = () => [...new Set(L.lines.filter((l) => l.code && !isPart(l)).map((l) => l.code))];
   const lineAmt = (l) => Math.round((parseNum(l.qty) * parseNum(l.price)) * 100) / 100;
-
   const TEM_FIELDS = [
     ['nameVi', 'Tên hàng (tiếng Việt)', ''], ['brand', 'Nhãn hiệu', ''], ['kind', 'Đặc điểm khai HQ', 'vd Dạng quạt đứng — chỉ đưa vào mô tả khai hải quan'],
     ['voltage', 'Điện áp', 'vd 220V ~ 50Hz'], ['power', 'Công suất', 'vd 40W'], ['year', 'Năm sản xuất', ''], ['pack', 'Số lượng / quy cách', 'vd 1 cái / thùng'],
@@ -230,20 +219,21 @@
     const a = { unknown: [] };
     if (p && p.name) a.nameVi = String(p.name).replace(/\s*\(ví dụ\)\s*/i, '').trim();
     else if (m.invName) { const t = V.product(m.invName); a.nameVi = t.vi; if (t.unknown.length) a.unknown.push(...t.unknown); }
-    a.brand = s.brand || '';
+    a.brand = m.brand || s.brand || '';
     let x;
     if ((x = tech.match(/(\d{2,3})\s*V(?:\s*[~\-–,]?\s*(\d{2})(?:\s*\/\s*(\d{2}))?\s*Hz)?/i))) a.voltage = `${x[1]}V` + (x[2] ? ` ~ ${x[2]}${x[3] ? '/' + x[3] : ''}Hz` : '');
     if ((x = tech.match(/(\d+(?:[.,]\d+)?)\s*W\b/))) a.power = x[1] + 'W';
     if ((x = tech.match(/(Dạng [^;,.]+)/i))) a.kind = x[1].trim();
     if ((x = tech.match(/(\d+)\s*cái\s*\/\s*(thùng|hộp)/i))) a.pack = `${x[1]} cái / ${x[2]}`;
-    else if (L.lines.filter((l) => l.code).length === 1 && L.plQty > 0 && L.plPkgs > 0 && L.plQty % L.plPkgs === 0) a.pack = `${L.plQty / L.plPkgs} cái / thùng`;
     a.year = String(new Date().getFullYear());
     if (p && parseNum(p.weight) > 0) a.wP = String(parseNum(p.weight)) + 'Kg';
     // tên / địa chỉ NSX: ưu tiên nhà máy ghi ở Landed Cost, không có thì lấy bên bán trong hợp đồng
     // (từ chưa dịch được luôn đưa vào unknown; phần hiển thị chỉ báo khi từ đó còn nằm trong ô)
     if (p && p.factory) { const t = V.company(p.factory); a.makerVi = t.vi; a.unknown.push(...t.unknown); }
+    else if (m.makerEn) { const t = V.company(m.makerEn); a.makerVi = t.vi; a.unknown.push(...t.unknown); }
     else if (s.name) { const t = V.company(s.name); a.makerVi = s.nameVi || t.vi; a.unknown.push(...t.unknown); }
     if (p && p.faddr) { const t = V.address(p.faddr, 'CN'); a.makerAddrVi = t.vi; a.unknown.push(...t.unknown); }
+    else if (m.makerAddrEn) { const t = V.address(m.makerAddrEn, 'CN'); a.makerAddrVi = t.vi; a.unknown.push(...t.unknown); }
     else if (s.addrRaw || s.addr1) {
       const t = V.address(s.addrRaw || [s.addr1, s.addr2, s.addr3].filter(Boolean).join(', '), s.country || 'CN');
       a.makerAddrVi = s.addrVi || t.vi; a.unknown.push(...t.unknown);
@@ -254,7 +244,7 @@
   function temOf(code) {
     const m = modelOf(code) || { tem: {} }; const a = temAuto(code); const t = {};
     TEM_FIELDS.forEach(([k]) => { t[k] = has(m.tem[k]) ? m.tem[k] : (a[k] || ''); });
-    t.auto = a; t.country = V.country(L.origin || 'CN');
+    t.auto = a; t.country = V.country(lineOrigin(L.lines.find((x) => x.code === code)));
     return t;
   }
   // viết hoa chữ đầu; chỉ hạ chữ thường khi cả chuỗi đang IN HOA (giữ nguyên 1.7L, 40W…)
@@ -324,7 +314,6 @@
     return mains.find((c) => k.includes(normKey(c))) || (mains.length === 1 ? mains[0] : '');
   }
 
-  /* Mã vạch EAN-13 → SVG */
   const EAN_L = ['0001101', '0011001', '0010011', '0111101', '0100011', '0110001', '0101111', '0111011', '0110111', '0001011'];
   const EAN_G = ['0100111', '0110011', '0011011', '0100001', '0011101', '0111001', '0000101', '0010001', '0001001', '0010111'];
   const EAN_R = EAN_L.map((s) => s.replace(/./g, (c) => (c === '0' ? '1' : '0')));
@@ -430,259 +419,90 @@
     if (t.replace(/\s/g, '').length >= 40) return { text: t, pages };
     return { text: await ocrCanvases(await pdfCanvases(doc, lang === 'vie' ? 6 : 4), f.name, lang), ocr: true };
   }
-
-  /* ======================= NẠP CHỨNG TỪ ======================= */
-  /* ======================= NẠP CHỨNG TỪ — mỗi loại 1 ô riêng =======================
-     Người dùng chọn đúng ô (không tự nhận diện). Tool chỉ cảnh báo khi file trông giống loại khác.
-     Mỗi lần nạp ghi lại giá trị cũ của các ô bị đổi → nút 🗑 Xoá trả lô về như trước khi nạp. */
-  const DOC_TYPES = [
-    ['hd', '📜 Hợp đồng', '.pdf,.docx,.doc,image/*', 'PDF, Word, bản scan'],
-    ['ci', '🧾 Commercial Invoice', '.pdf,.xlsx,.xls,.csv,image/*', 'PDF hoặc Excel'],
-    ['pl', '📦 Packing List', '.pdf,.xlsx,.xls,.csv,image/*', 'PDF hoặc Excel'],
-    ['bill', '🚢 Vận đơn (Bill)', '.pdf,image/*', 'PDF, bản scan'],
-    ['co', '🏅 C/O', '.pdf,image/*', 'PDF, bản scan'],
-    ['an', '📣 Arrival Notice', '.pdf,.docx,image/*', 'PDF, Word, bản scan'],
-    ['fr', '💵 Hoá đơn cước', '.pdf,.xml,image/*', 'HĐ điện tử PDF / XML, debit note'],
-    ['bh', '🛡️ Hoá đơn bảo hiểm', '.pdf,.xml,image/*', 'HĐ điện tử PDF / XML'],
+  /* ======================= NẠP FORM MẪU (Excel) =======================
+     Form: tools/customs-entry/Mau-Danh-Sach-Hang.xlsx — sheet đầu tiên, dòng tiêu đề nhận theo tên cột (không cần đúng thứ tự).
+     Ô trống: Mô tả → tool tự tạo (tem phụ / dịch linh kiện); Mã HS → lấy từ Landed Cost / gợi ý; Trị giá → SL × đơn giá;
+     Linh kiện → tool tự nhận theo tên; Xuất xứ → CN. */
+  const FORM_COLS = [
+    ['code', /^mã\s*hàng|^model|^item\s*no|^mã\b/], ['en', /tên\s*hàng.*invoice|tiếng\s*anh|^description|^tên\s*hàng/], ['desc', /mô\s*tả/],
+    ['hs', /^mã\s*hs|^hs/], ['qty', /^số\s*lượng|^q'?ty|^quantity/], ['unit', /^đơn\s*vị|^đvt|^unit$/], ['price', /^đơn\s*giá|unit\s*price/],
+    ['amount', /^trị\s*giá|^thành\s*tiền|^amount/], ['origin', /^xuất\s*xứ|origin/], ['co', /^c\/?o|form\s*e/], ['part', /^linh\s*kiện|spare/],
+    ['parent', /thuộc\s*model|máy\s*chính|parent/], ['foc', /^f\.?o\.?c|free/], ['brand', /nhãn\s*hiệu|thương\s*hiệu|brand/],
+    ['makerAddrEn', /địa\s*chỉ.*(nhà\s*sản\s*xuất|nsx)|maker\s*address|factory\s*address/], ['makerEn', /nhà\s*sản\s*xuất|manufacturer|factory|maker/],
+    ['note', /ghi\s*chú|note/], ['stt', /^stt|^no\.?$/],
   ];
-  const DOCNAME = Object.fromEntries(DOC_TYPES.map((d) => [d[0], d[1].replace(/^\S+\s/, '')]));
-  DOCNAME.vat = 'hoá đơn GTGT'; DOCNAME.fee = 'debit note';
-  const SLOT_FIELDS = {
-    bill: ['blNo', 'blDate', 'vessel', 'pol', 'pod', 'cont', 'pkgs', 'gw', 'cbm', 'blHs'],
-    ci: ['invNo', 'invDate', 'incoterm', 'invTotal'],
-    pl: ['plInv', 'plQty', 'plPkgs', 'plGw', 'plNw'],
-    co: ['coNo', 'coForm', 'coDate', 'coPkgs', 'coGw', 'coText'],
-    an: ['arrival', 'storeCode', 'anBl', 'anVessel', 'anFreightUsd'],
-    fr: ['freight', 'freightCur'], bh: ['ins', 'insCur'],
-  };
-  const SLOT_OK = { fr: ['vat', 'fee'], bh: ['vat', 'fee'], an: [], hd: [] };
-  L.docSet = L.docSet || {}; L.feeDoc = L.feeDoc || {};
-  let busy = false;
-  const isSheet = (f) => /\.(xlsx|xls|csv)$/i.test(f.name);
-  async function readSheet(f) {
-    if (!window.XLSX) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
-    const wb = window.XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    return P.sheetRows(window.XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' }));
-  }
-  /* Dòng Invoice → dòng hàng (tự nhận linh kiện) */
-  function linesFromInvoice(list) {
-    const partOf = (x) => (x.spare || V.isPartName(x.name)) && !lcFind(x.code);
-    const mains = list.filter((x) => x.code && !partOf(x)).map((x) => x.code);
-    const out = list.map((x) => {
-      const amount = has(x.amount) && x.amount > 0 ? x.amount : Math.round(x.qty * x.price * 100) / 100;
-      // hàng F.O.C (Invoice ghi "F.O.C" ở cột thành tiền): vẫn khai theo SL × đơn giá, nhưng không có trong tổng Invoice
-      const base = { id: uid(), code: String(x.code || '').toUpperCase(), qty: x.qty, price: x.price, invAmount: x.foc ? undefined : amount, invFoc: !!x.foc, unit: UNIT_MAP[String(x.unit || '').toUpperCase()] || 'PCE' };
-      const isP = partOf(x); const tr = isP ? V.part(x.name) : null; if (tr && x.foc) tr.foc = true;
-      if (base.code) {
-        const fresh = !modelOf(base.code); const m = ensureModel(base.code, x.name);
-        if (fresh && isP) Object.assign(m, { part: true, foc: tr.foc, parent: guessParent(base.code, x.name, mains) });
-        return base;
-      }
-      return Object.assign(base, { en: x.name, desc: isP ? '' : x.name, part: isP, foc: isP ? tr.foc : false, parent: isP ? guessParent('', x.name, mains) : '', hs: '' });
-    });
-    return out;
-  }
-  /* Đọc 1 file vào đúng ô k → trả về object các trường của lô (hoặc null nếu không đọc được gì) */
-  async function readSlot(k, f) {
-    if (isSheet(f)) {
-      if (k !== 'ci' && k !== 'pl') throw new Error('loại chứng từ này chưa đọc được từ Excel');
-      const { rows, meta } = await readSheet(f);
-      if (!rows.length) throw new Error('không tìm thấy dòng tiêu đề có cột Số lượng / Đơn giá / Thành tiền (hoặc G.W) trong sheet đầu');
-      if (k === 'ci') return { res: { invNo: meta.invNo, invDate: meta.invDate, invTotal: rows.reduce((a, r) => a + (r.amount || r.qty * r.price || 0), 0), lines: rows }, info: `${rows.length} dòng hàng (Excel)` };
-      const sum = (key) => { const v = rows.reduce((a, r) => a + (r[key] > 0 ? r[key] : 0), 0); return v || undefined; };
-      return { res: { plQty: sum('qty'), plPkgs: sum('pkgs'), plGw: sum('gw'), plNw: sum('nw') }, info: `${rows.length} dòng (Excel)` };
+  const yes = (v) => /^(có|co|x|yes|y|1|true|v|✓|e|form\s*e)$/i.test(String(v ?? '').trim());
+  const no = (v) => /^(không|khong|no|n|0|false)$/i.test(String(v ?? '').trim());
+  function readForm(aoa) {
+    const low = (v) => String(v ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+    let hi = -1, map = {};
+    for (let r = 0; r < Math.min(aoa.length, 30); r++) {
+      const m = {};
+      (aoa[r] || []).forEach((c, i) => { const t = low(c); if (!t) return; for (const [k, re] of FORM_COLS) if (m[k] === undefined && re.test(t)) { m[k] = i; break; } });
+      if (m.qty !== undefined && (m.code !== undefined || m.en !== undefined || m.desc !== undefined)) { hi = r; map = m; break; }
     }
-    const { text, ocr, pages, xml } = await fileText(f);
-    const guess = P.classify(text);
-    if (guess && guess !== k && !(SLOT_OK[k] || []).includes(guess) && !(k === 'ci' && guess === 'pl') && !(k === 'pl' && guess === 'ci'))
-      slotWarn = `File này trông giống ${DOCNAME[guess] || guess} — kiểm tra lại, nạp nhầm thì bấm 🗑 Xoá`;
-    const tag = ocr ? ' (đọc bản scan)' : '';
-    if (k === 'hd') return { contract: P.contract(text), ocr, tag };
-    if (k === 'an') { const a = P.an(text); return { res: { arrival: a.arrival, storeCode: a.storeCode, anBl: a.anBl, anVessel: a.anVessel, anFreightUsd: a.anFreightUsd, pod: !L.pod && a.anPod ? 'HO CHI MINH(' + a.anPod + ')' : undefined }, tag }; }
-    if (k === 'fr' || k === 'bh') return { fee: await readFee(k, text, pages, xml, guess), tag };
-    const res = P[k](text);
-    if (k === 'ci') {
-      delete res.plInv;
-      // bảng có ô nhiều dòng / cột F.O.C → đọc theo toạ độ; lấy cách đọc ra nhiều dòng hàng hơn
-      // chấm điểm 2 cách đọc: khớp tổng Invoice (bỏ dòng F.O.C) quan trọng nhất, rồi số dòng; hoà thì ưu tiên đọc theo toạ độ
-      const tbl = pages ? P.ciTable(pages) : [];
-      const score = (ls, bonus) => { if (!ls || !ls.length) return -1; const sum = ls.reduce((s0, x) => s0 + (x.foc ? 0 : x.amount || 0), 0);
-        return (res.invTotal && Math.abs(sum - res.invTotal) < 0.01 ? 1000 : 0) + ls.length * 10 + bonus; };
-      if (score(tbl, 1) > score(res.lines, 0)) res.lines = tbl;
-      if (!res.invTotal && res.lines) res.invTotal = res.lines.reduce((s0, x) => s0 + (x.foc ? 0 : x.amount || 0), 0);
+    if (hi < 0) throw new Error('không thấy dòng tiêu đề (cần cột "Số lượng" và "Mã hàng" / "Tên hàng") — dùng form mẫu của tool');
+    const rows = [];
+    for (let r = hi + 1; r < aoa.length; r++) {
+      const row = aoa[r] || []; const g = (k) => (map[k] === undefined ? '' : row[map[k]]);
+      const qty = parseNum(g('qty'));
+      if (!(qty > 0)) { if (/^(tổng|total)/i.test(low(row.find((c) => low(c)) || ''))) break; continue; }
+      const price = parseNum(g('price')); const amount = parseNum(g('amount'));
+      rows.push({ code: String(g('code') ?? '').trim().toUpperCase(), en: String(g('en') ?? '').trim(), desc: String(g('desc') ?? '').trim(),
+        hs: String(g('hs') ?? '').replace(/\D/g, ''), qty, unit: String(g('unit') || 'PCE').trim().toUpperCase(), price: price || 0, amount: amount || 0,
+        origin: String(g('origin') || 'CN').trim().toUpperCase().slice(0, 2) || 'CN', co: yes(g('co')), partRaw: g('part'), parent: String(g('parent') ?? '').trim().toUpperCase(),
+        foc: yes(g('foc')), brand: String(g('brand') ?? '').trim(), makerEn: String(g('makerEn') ?? '').trim(), makerAddrEn: String(g('makerAddrEn') ?? '').trim() });
     }
-    return { res, tag, text };
-  }
-  /* Hoá đơn cước / bảo hiểm → các dòng phí, mỗi dòng có ô chọn (đã chọn sẵn: cước quốc tế / phí bảo hiểm) */
-  async function readFee(k, text, pages, xml, guess) {
-    let rows = [];
-    if (xml || guess === 'vat') {
-      if (!window.InvoiceParser) await loadScript('../cost-payment/invoice-parser.js?v=20261028');
-      const inv = xml ? window.InvoiceParser.fromXml(xml) : window.InvoiceParser.fromPdfPages(pages || []);
-      rows = (inv.lines || []).filter((x) => x.pre).map((x) => ({ desc: x.desc, amt: x.pre, cur: 'VND' }));
-    }
-    if (!rows.length) rows = P.feeLines(text, true).map((x) => ({ desc: x.desc, amt: x.usd || x.vnd, cur: x.usd ? 'USD' : 'VND' }));
-    rows.forEach((r) => { r.kind = P.feeKind(r.desc); r.on = k === 'bh' ? r.kind !== 'local' : r.kind === 'freight'; });
-    // hoá đơn của công ty bảo hiểm: dòng ghi điều kiện (vd "Điều kiện ICC A") vẫn là phí bảo hiểm
-    if (k === 'bh' && /BẢO\s*HIỂM|INSURANCE/i.test(String(text).normalize('NFC'))) rows.forEach((r) => { r.on = true; r.kind = 'ins'; });
-    if (k === 'fr' && !rows.some((r) => r.on)) rows.forEach((r) => { if (r.kind === 'other') r.on = true; });
     return rows;
   }
-  function feeTotal(k) {
-    const d = L.feeDoc[k]; if (!d) return null;
-    const on = d.rows.filter((r) => r.on);
-    const usd = on.filter((r) => r.cur === 'USD').reduce((a, r) => a + r.amt, 0);
-    const vnd = on.filter((r) => r.cur !== 'USD').reduce((a, r) => a + r.amt, 0);
-    if (usd && !vnd) return { v: Math.round(usd * 100) / 100, cur: 'USD' };
-    return { v: Math.round(vnd + usd * (parseNum(L.rate) || 0)), cur: 'VND' };
-  }
-  function applyFeeTotal(k) {
-    const t = feeTotal(k); if (!t) return;
-    const key = k === 'fr' ? 'freight' : 'ins';
-    L[key] = t.v; L[key + 'Cur'] = t.cur;
-  }
-  let slotWarn = '';
-  async function handleSlot(k, files) {
-    if (busy) { GauBep.toast('Đang đọc file trước, chờ chút…'); return; }
-    const f = files[0]; if (!f) return;
-    busy = true;
-    try {
-      GauBep.toast(`🔎 Đang đọc ${DOCNAME[k]}: ${f.name}…`); slotWarn = '';
-      if (L.sample) L = newLot();
-      if (L.docs[k]) clearSlot(k, true);                        // nạp lại → bỏ dữ liệu của file cũ trước
-      const before = JSON.parse(JSON.stringify(L));
-      // xoá sạch các ô thuộc loại chứng từ này (kể cả dữ liệu cũ nạp từ bản tool trước) để không lẫn thông tin file cũ
-      (SLOT_FIELDS[k] || []).forEach((kk) => { delete L[kk]; });
-      if (k === 'ci') L.lines = [];
-      const supsBefore = JSON.parse(JSON.stringify(S.sups));
-      const r = await readSlot(k, f);
-      let info = '';
-      if (k === 'hd') {
-        if (!applyContract(r.contract, f.name, r.ocr)) return;
-        L.docSet.hd = { sups: supsBefore, supId: before.supId };
-      } else if (k === 'fr' || k === 'bh') {
-        if (!r.fee.length) { GauBep.toast(`${f.name}: không đọc được dòng phí nào — nhập tay ở mục 2`); return; }
-        L.feeDoc[k] = { file: f.name, rows: r.fee }; applyFeeTotal(k);
-        info = `${r.fee.filter((x) => x.on).length}/${r.fee.length} dòng được tính`;
-      } else {
-        const res = r.res || {};
-        if (k === 'ci' && res.lines) {
-          L.lines = linesFromInvoice(res.lines); fillPartHS();
-          const hit = r.text && S.sups.find((x) => x.key && normKey(r.text).includes(normKey(x.key))); if (hit) L.supId = hit.id;
-          info = `${res.lines.length} dòng hàng` + (r.info ? '' : '');
-        }
-        delete res.lines;
-        let n = 0; Object.entries(res).forEach(([kk, v]) => { if (has(v)) { L[kk] = v; n++; } });
-        if (!n && !(k === 'ci' && L.lines.length)) { GauBep.toast(`⚠️ ${f.name}: không đọc được thông tin nào — kiểm tra đúng ô chưa, hoặc nhập tay${k === 'ci' || k === 'pl' ? ' / nạp file Excel' : ''}`); }
-        if (k === 'ci' && !L.lines.length) GauBep.toast(`⚠️ ${f.name}: không đọc được dòng hàng — Invoice khác mẫu thì nạp file Excel của Invoice, hoặc thêm dòng tay ở mục 3`);
-        if (r.info) info = r.info;
-      }
-      // ghi lại giá trị cũ của các ô bị đổi (để Xoá)
-      if (k !== 'hd') {
-        const prev = {};
-        Object.keys(L).forEach((kk) => { if (['docs', 'docSet', 'feeDoc', 'lines', 'sample'].includes(kk)) return; if (JSON.stringify(L[kk]) !== JSON.stringify(before[kk])) prev[kk] = before[kk] === undefined ? null : before[kk]; });
-        L.docSet[k] = { prev, lines: k === 'ci' ? before.lines : undefined };
-      }
-      // kiểm tra trường chính của từng loại — thiếu thì báo ngay trên ô
-      const MAIN = { bill: ['blNo', 'số vận đơn'], ci: ['invNo', 'số Invoice'], pl: ['plGw', 'trọng lượng'], co: ['coNo', 'số C/O'], an: ['arrival', 'ngày hàng đến'] };
-      if (MAIN[k] && !has(L[MAIN[k][0]]) && !slotWarn) slotWarn = `Không đọc được ${MAIN[k][1]}${r.tag ? ' (file đọc bằng nhận dạng chữ)' : ''} — kiểm tra các ô ở mục 2, gửi file này để chỉnh cách đọc`;
-      L.docs[k] = f.name + (r.tag || '') + (info ? ' · ' + info : '');
-      L.docWarn = L.docWarn || {}; if (slotWarn) L.docWarn[k] = slotWarn; else delete L.docWarn[k];
-      L.lines.forEach((l) => { const m = modelOf(l.code); if (m && !m.supId) m.supId = L.supId; });
-      GauBep.toast(slotWarn ? `⚠️ ${slotWarn}` : `Đã đọc ${DOCNAME[k]} 🐼`);
-    } catch (e) { GauBep.toast(`${f.name}: ${e.message || 'lỗi đọc file'}`); }
-    finally { busy = false; saveSet(); saveLot(); renderAll(); }
-  }
-  /* Xoá chứng từ đã nạp: trả các ô về giá trị trước khi nạp */
-  function clearSlot(k, silent) {
-    const d = L.docSet[k];
-    if (k === 'hd' && d) { S.sups = d.sups; L.supId = d.supId; }
-    else if (d) { Object.entries(d.prev || {}).forEach(([kk, v]) => { if (v === null) delete L[kk]; else L[kk] = v; }); if (d.lines) L.lines = d.lines; }
-    if (k === 'fr' || k === 'bh') delete L.feeDoc[k];
-    delete L.docSet[k]; delete L.docs[k]; if (L.docWarn) delete L.docWarn[k];
-    if (!silent) { saveSet(); saveLot(); renderAll(); GauBep.toast(`Đã xoá ${DOCNAME[k]}`); }
-  }
-  /* Hợp đồng → hồ sơ NCC (tìm NCC trùng tên / trùng số HĐ, không có thì tạo mới) */
-  function applyContract(c, fname, ocr) {
-    if (!c.contractNo && !c.sellerName) { GauBep.toast(`${fname}: không tìm thấy số hợp đồng / bên bán`); return false; }
-    const core = (n) => normKey(String(n || '').replace(/\b(CO|LTD|LIMITED|COMPANY|CORP|CORPORATION|INC)\b/gi, ''));
-    let s = S.sups.find((x) => c.sellerName && core(x.name) && core(x.name) === core(c.sellerName))
-      || S.sups.find((x) => c.contractNo && x.contractNo === c.contractNo);
-    if (!s) { s = { id: uid(), country: 'CN' }; S.sups.push(s); }
-    const name = String(c.sellerName || '').toUpperCase().replace(/\s*CO\s*[.,]*\s*LTD\.?/, ' CO., LTD').replace(/\s+/g, ' ').trim();
-    if (name && !s.name) s.name = name;
-    if (c.sellerAddr) {
-      s.addrRaw = c.sellerAddr;
-      if (!s.addr1) { const ln = V.ecusAddress(c.sellerAddr, s.country || 'CN'); ['addr1', 'addr2', 'addr3', 'addr4'].forEach((k, i) => { s[k] = ln[i] || ''; }); }
-      if (!s.addrVi) s.addrVi = V.address(c.sellerAddr, s.country || 'CN').vi;
-    }
-    if (s.name && !s.nameVi) s.nameVi = V.company(s.name).vi;
-    if (c.brand && !s.brand) s.brand = c.brand;
-    if (!s.key && s.name) {
-      const skip = new Set([...V.PLACES.map((p) => p[0].toUpperCase()), ...V.ORG.map((o) => o[0].toUpperCase()), 'CO', 'LTD', 'GROUP', 'COMPANY', 'LIMITED']);
-      s.key = s.name.split(/[^A-Z0-9]+/).find((w) => w.length >= 3 && !skip.has(w)) || '';
-    }
-    Object.assign(s, { contractNo: c.contractNo || s.contractNo, contractDate: c.contractDate || s.contractDate, contractEnd: c.contractEnd || s.contractEnd,
-      contractDate2: c.contractDate2 || '', endGuess: !!c.endGuess, contractFile: fname, contractOcr: !!ocr });
-    L.supId = s.id; L.docs.hd = fname + (ocr ? ' (đọc bản scan)' : '');
-    return true;
-  }
-  /* Ô chứng từ: chọn file / kéo thả / xoá / chọn dòng phí */
-  const docsBox = $('#docs');
-  docsBox.addEventListener('change', (e) => {
-    const inp = e.target;
-    if (inp.dataset.slot) { const fs = [...inp.files]; inp.value = ''; handleSlot(inp.dataset.slot, fs); return; }
-    if (inp.dataset.fee) { const r = L.feeDoc[inp.dataset.fee].rows[+inp.dataset.i]; r.on = inp.checked; applyFeeTotal(inp.dataset.fee); saveLot(); later(); }
-  });
-  docsBox.addEventListener('click', (e) => { const b = e.target.closest('[data-clear]'); if (b) clearSlot(b.dataset.clear); });
-  ['dragenter', 'dragover'].forEach((ev) => docsBox.addEventListener(ev, (e) => { const c = e.target.closest('.slot'); if (!c) return; e.preventDefault(); c.classList.add('over'); }));
-  ['dragleave', 'drop'].forEach((ev) => docsBox.addEventListener(ev, (e) => { const c = e.target.closest('.slot'); if (!c) return; e.preventDefault(); c.classList.remove('over');
-    if (ev === 'drop') handleSlot(c.dataset.k, [...e.dataTransfer.files]); }));
-
-  /* ======================= 1–2. CHỨNG TỪ & THÔNG TIN LÔ ======================= */
-  function renderLot() {
-    document.querySelectorAll('[data-k]').forEach((el) => {
-      const v = L[el.dataset.k];
-      el.value = has(v) ? (el.hasAttribute('data-num') ? fmt(v) : v) : (el.tagName === 'SELECT' ? el.options[0].value : '');
-      el.classList.toggle('empty', el.value === '');
+  function applyForm(rows) {
+    const isP = (x) => (yes(x.partRaw) ? true : no(x.partRaw) ? false : V.isPartName(x.en) && !lcFind(x.code));
+    const mains = rows.filter((x) => x.code && !isP(x)).map((x) => x.code);
+    L.lines = rows.map((x) => {
+      const part = isP(x);
+      const l = { id: uid(), code: x.code, qty: x.qty, price: x.price, unit: UNIT_MAP[x.unit] || x.unit || 'PCE', origin: x.origin, co: x.co,
+        invAmount: x.amount > 0 ? x.amount : undefined, invFoc: x.foc && !(x.amount > 0) };
+      const h = x.code ? ensureModel(x.code, x.en) : l;
+      if (!x.code) Object.assign(h, { en: x.en, desc: part ? '' : (x.desc || x.en), hs: '' });
+      if (x.en && x.code) h.invName = x.en;
+      h.unit = l.unit;
+      if (part) Object.assign(h, { part: true, foc: x.foc || V.part(x.en).foc, parent: x.parent || guessParent(x.code, x.en, mains) });
+      else if (x.code) h.part = false;
+      if (x.hs.length === 8) { h.hs = x.hs; h.hsSrc = ''; }
+      else if (x.code && !h.hs) { const p = lcFind(x.code); if (lcHS(p)) { h.hs = lcHS(p); h.hsSrc = 'lc'; } }
+      if (x.desc && (x.code || part)) { h.desc = x.desc; h.descManual = true; }
+      if (x.brand) h.brand = x.brand;
+      if (x.makerEn) h.makerEn = x.makerEn;
+      if (x.makerAddrEn) h.makerAddrEn = x.makerAddrEn;
+      return l;
     });
-    const s = sup();
-    $('#docs').innerHTML = DOC_TYPES.map(([k, title, accept, hint]) => {
-      const loaded = !!L.docs[k];
-      let sub = loaded ? L.docs[k] : `Kéo thả vào đây hoặc chọn file · ${hint}`;
-      let ok = loaded;
-      if (k === 'hd' && s.contractNo) { ok = true; sub = (loaded ? L.docs.hd + ' · ' : '') + `${s.contractNo} · ký ${dmy(s.contractDate) || '?'} · hết hạn ${dmy(s.contractEnd) || '?'}` + (loaded ? '' : ' (đã lưu ở NCC)'); }
-      if (k === 'an' && loaded) sub += `${L.arrival ? ' · đến ' + dmy(L.arrival) : ''}${L.storeCode ? ' · kho ' + L.storeCode : ''}`;
-      let fee = '';
-      if ((k === 'fr' || k === 'bh') && L.feeDoc[k]) {
-        const t = feeTotal(k);
-        fee = `<div class="fee-rows">${L.feeDoc[k].rows.map((r, i) => `<label class="${r.on ? "" : "off"}"><input type="checkbox" data-fee="${k}" data-i="${i}"${r.on ? ' checked' : ''}><span>${esc(r.desc)}</span><b>${fmt(r.amt, 2)} ${r.cur}</b></label>`).join('')}
-          <div class="fee-sum">Tính vào ${k === 'fr' ? 'phí vận chuyển' : 'phí bảo hiểm'}: <b>${fmt(t.v, 2)} ${t.cur}</b></div></div>`;
-      }
-      return `<div class="slot${ok ? ' ok' : ''}" data-k="${k}"><div class="slot-head"><b>${ok ? '✅' : '⬜'} ${title.replace(/^\S+\s/, '')}</b><span class="slot-ic">${title.split(' ')[0]}</span></div>
-        <span class="slot-sub">${esc(sub)}</span>${L.docWarn && L.docWarn[k] ? `<span class="slot-warn">⚠️ ${esc(L.docWarn[k])}</span>` : ''}${fee}
-        <div class="slot-act"><label class="btn btn-ghost btn-sm file-btn">📂 ${loaded ? 'Nạp lại' : 'Chọn file'}<input type="file" data-slot="${k}" accept="${accept}" hidden></label>${loaded ? `<button type="button" class="btn btn-ghost btn-sm" data-clear="${k}">🗑 Xoá</button>` : ''}</div></div>`;
-    }).join('');
-    $('#supSel').innerHTML = S.sups.length ? S.sups.map((x) => `<option value="${x.id}"${x.id === L.supId ? ' selected' : ''}>${esc(x.name || '(chưa đặt tên)')}</option>`).join('')
-      : '<option value="">Chưa có — nạp hợp đồng hoặc thêm ở ⚙️ Cài đặt</option>';
-    $('#setupNote').hidden = S.sups.length > 0;
+    fillPartHS();
   }
-  document.querySelectorAll('[data-k]').forEach((el) => el.addEventListener('change', () => {
-    const k = el.dataset.k;
-    L[k] = el.hasAttribute('data-num') ? (el.value.trim() === '' ? '' : parseNum(el.value)) : el.value.trim();
-    if (k === 'origin') L[k] = String(L[k]).toUpperCase();
-    saveLot(); later();
-  }));
-  $('#supSel').addEventListener('change', (e) => { L.supId = e.target.value; saveLot(); later(); });
+  async function importForm(f) {
+    try {
+      if (!window.XLSX) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+      const wb = window.XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      const name = wb.SheetNames.find((n) => /danh\s*s[aá]ch|hang/i.test(n)) || wb.SheetNames[0];
+      const rows = readForm(window.XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: '' }));
+      if (!rows.length) throw new Error('form chưa có dòng hàng nào (cần Số lượng > 0)');
+      hsLine = null; L = newLot(); L.name = f.name; applyForm(rows);
+      saveSet(); saveLot(); renderAll();
+      GauBep.toast(`Đã nạp ${rows.length} dòng hàng từ ${f.name} 🐼`);
+    } catch (e) { GauBep.toast(`${f.name}: ${e.message || 'không đọc được file'}`); }
+  }
+  $('#fileForm').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) importForm(f); });
+  const fdz = $('#formDrop');
+  ['dragenter', 'dragover'].forEach((ev) => fdz.addEventListener(ev, (e) => { e.preventDefault(); fdz.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((ev) => fdz.addEventListener(ev, (e) => { e.preventDefault(); fdz.classList.remove('over'); if (ev === 'drop' && e.dataTransfer.files[0]) importForm(e.dataTransfer.files[0]); }));
 
-  /* ======================= 3. DANH SÁCH HÀNG ======================= */
+  let busy = false;
+  /* ======================= 1. DANH SÁCH HÀNG ======================= */
   let hsLine = null;   // dòng đang chọn mã HS (bảng gợi ý)
   function renderLines() {
     const tb = $('#lineBody');
-    if (!L.lines.length) { tb.innerHTML = '<tr><td colspan="11" class="muted">Chưa có dòng hàng — nạp Invoice hoặc bấm ＋ Thêm dòng.</td></tr>'; renderHsPanel(); return; }
+    if (!L.lines.length) { tb.innerHTML = '<tr><td colspan="12" class="muted">Chưa có dòng hàng — nạp form danh sách hàng (Excel) hoặc bấm ＋ Thêm dòng.</td></tr>'; renderHsPanel(); return; }
     tb.innerHTML = L.lines.map((l, i) => {
-      const hs = lineHS(l); const R = rateOf(hs); const m = modelOf(l.code); const p = l.code ? lcFind(l.code) : null;
+      const hs = lineHS(l); const R = rateOf(hs, l); const m = modelOf(l.code); const p = l.code ? lcFind(l.code) : null;
       const h = peek(l); const part = !!h.part;
       const src = h.hsSrc === 'sug' && hs ? '<div class="hs-src sug">💡 gợi ý tự động — bấm ô để xem & xác nhận</div>'
         : !l.code ? (hs ? '<div class="hs-src">✍️ nhập tay</div>' : '') : m && m.hsSrc === 'lc' && hs && hs === lcHS(p) ? '<div class="hs-src">🚢 từ Landed Cost</div>' : hs ? '<div class="hs-src">✍️ nhập tay</div>' : '';
@@ -706,6 +526,7 @@
         <td class="hs-cell"><input data-f="hs" value="${esc(fmtHS(hs))}" placeholder="gõ mã / từ khoá">${src}${note}</td>
         <td><input class="in-num" data-f="qty" value="${fmt(l.qty)}" inputmode="decimal" style="width:90px"></td>
         <td><input data-f="unit" value="${esc(lineUnit(l))}" style="width:64px"></td>
+        <td><input data-f="origin" value="${esc(lineOrigin(l))}" maxlength="2" style="width:48px" title="Mã nước xuất xứ"><label class="co-chk" title="Có C/O form E → thuế ACFTA, mã biểu thuế ${esc(S.gen.btFormE)}"><input type="checkbox" data-f="co"${l.co ? ' checked' : ''}> C/O E</label></td>
         <td><input class="in-num" data-f="price" value="${fmt(l.price, 4)}" inputmode="decimal" style="width:90px"></td>
         <td class="num">${fmt(lineAmt(l), 2)}</td>
         <td><input class="in-num" data-f="nkOv" value="${fmt(nk)}" placeholder="–" inputmode="decimal" style="width:62px" title="${R && !R.bad ? 'Theo biểu thuế: ' + R.src : ''}"></td>
@@ -721,8 +542,10 @@
     const el = e.target; const tr = el.closest('tr'); if (!tr || !el.dataset.f) return;
     const l = L.lines.find((x) => x.id === tr.dataset.id); const f = el.dataset.f;
     if (f === 'qty' || f === 'price') l[f] = parseNum(el.value);
+    else if (f === 'origin') l.origin = el.value.trim().toUpperCase() || 'CN';
+    else if (f === 'co') l.co = el.checked;
     else if (f === 'nkOv' || f === 'vatOv') {
-      const R = rateOf(lineHS(l)); const auto = R && !R.bad ? (f === 'nkOv' ? R.nk : R.vat) : NaN;
+      const R = rateOf(lineHS(l), l); const auto = R && !R.bad ? (f === 'nkOv' ? R.nk : R.vat) : NaN;
       l[f] = el.value.trim() === '' || parseNum(el.value) === auto ? '' : parseNum(el.value);
     } else if (f === 'hs') {
       const d = el.value.replace(/\D/g, '');
@@ -784,7 +607,7 @@
       || (nq && normTxt(p.name).includes(nq)) || (q && normTxt(p.code + ' ' + p.name).includes(normTxt(q))))).slice(0, 6);
     const kws = part && !q ? [] : kwSuggest(q || [t.nameVi, (modelOf(l.code) || {}).invName].filter(Boolean).join(' '));
     const codes = searchTariff(query, 6);
-    const item = (c, extra, src) => { const R = DB && DB.map.get(c); const r = rateOf(c);
+    const item = (c, extra, src) => { const R = DB && DB.map.get(c); const r = rateOf(c, l);
       return `<button type="button" class="hs-opt${c === hs ? ' on' : ''}" data-hs="${c}" data-src="${src}"><b class="mono">${fmtHS(c)}</b>${extra ? ' ' + extra : ''}<span class="muted"> · MFN ${r && !r.bad ? fmt(r.mfn) : '–'}% · ACFTA ${r && has(r.acfta) ? fmt(r.acfta) + '%' : '–'}</span><br><span class="small">${esc(R ? shortDesc(R) : '')}</span></button>`; };
     box.hidden = false;
     box.innerHTML = `<div class="hs-head"><b>Mã HS cho dòng ${i}${l.code ? ' · ' + esc(l.code) : ''}</b><span class="help-text">${query ? 'tra theo: “' + esc(query) + '”' : 'gõ từ khoá hoặc đầu mã vào ô Mã HS'}</span><button type="button" class="btn btn-ghost btn-sm" data-act="close">Đóng</button></div>
@@ -801,7 +624,7 @@
     setLineHS(l, b.dataset.hs, b.dataset.src); saveLot(); renderAll(); GauBep.toast('Đã chọn mã ' + fmtHS(b.dataset.hs));
   });
 
-  /* ======================= 4. TEM PHỤ ======================= */
+  /* ======================= 2. TEM PHỤ ======================= */
   const temCodes = () => mainCodes();
   function temLines(code) {
     const t = temOf(code); const g = S.gen;
@@ -846,7 +669,7 @@
       return `<div class="tem-card" data-code="${esc(code)}">
         <div class="tem-form">
           <h3 class="sub-title" style="margin-top:0">🏷️ ${esc(code)}${m.invName ? ` <span class="muted small">· Invoice: ${esc(m.invName)}</span>` : ''}${m.temFile ? ` <span class="muted small">· tem: ${esc(m.temFile)}</span>` : ''}</h3>
-          ${unknown.length ? `<div class="note">✍️ Tên riêng chưa dịch được: <b>${esc(unknown.join(', '))}</b> — sửa tay ở ô bên dưới (vd tên tiếng Việt in trên tem cũ). Sửa ô Nhà sản xuất / Địa chỉ thì lưu cho cả nhà cung cấp.</div>` : ''}
+          ${unknown.length ? `<div class="note">✍️ Tên riêng chưa dịch được: <b>${esc(unknown.join(', '))}</b> — sửa tay ở ô bên dưới (vd tên tiếng Việt in trên tem cũ), tool nhớ cho các lô sau.</div>` : ''}
           <div class="form-grid tem-grid">${TEM_FIELDS.map(([k, lbl, tip]) => {
             const isAuto = !has(m.tem[k]) && has(t[k]);
             const wide = ['makerVi', 'makerAddrVi', 'feature', 'nameVi'].includes(k);
@@ -983,197 +806,43 @@
     try { await navigator.clipboard.writeText(t); if (el) { el.classList.add('copied'); setTimeout(() => el.classList.remove('copied'), 900); } GauBep.toast('Đã copy'); }
     catch (err) { GauBep.toast('Trình duyệt chặn copy — bôi đen để copy tay'); }
   }
-
-  /* ======================= 5. KIỂM TRA ======================= */
+  /* ======================= KIỂM TRA (dòng hàng & tem) ======================= */
   function renderChecks() {
     const out = []; const add = (lv, m) => out.push([lv, m]);
-    const same = (a, b) => isFinite(a) && isFinite(b) && Math.abs(a - b) < 0.01;
-    const cmp = (name, arr, unit) => {
-      const v = arr.filter((x) => has(x.v)); if (v.length < 2) return;
-      const ok = v.every((x) => same(x.v, v[0].v));
-      add(ok ? 'ok' : 'err', ok ? `${name} khớp: ${fmt(v[0].v)} ${unit} (${v.map((x) => x.n).join(', ')})` : `${name} lệch: ` + v.map((x) => `${x.n} ${fmt(x.v)}`).join(' · '));
-    };
-    const qtyTotal = L.lines.reduce((a, l) => a + (parseNum(l.qty) || 0), 0);
-    const amtTotal = L.lines.filter((l) => !l.invFoc).reduce((a, l) => a + lineAmt(l), 0);
-    const focLines = L.lines.filter((l) => l.invFoc);
-    if (focLines.length) add('ok', `${focLines.length} dòng hàng F.O.C (Invoice không tính tiền) — khai theo SL × đơn giá trên Invoice: ${fmt(focLines.reduce((a, l) => a + lineAmt(l), 0), 2)} USD, không cộng vào tổng Invoice`);
-    cmp('Số kiện', [{ n: 'Bill', v: L.pkgs }, { n: 'PL', v: L.plPkgs }, { n: 'C/O', v: L.coPkgs }], 'kiện');
-    cmp('Gross weight', [{ n: 'Bill', v: L.gw }, { n: 'PL', v: L.plGw }, { n: 'C/O', v: L.coGw }], 'kg');
-    if (L.lines.length) cmp('Số lượng hàng', [{ n: 'Danh sách hàng', v: qtyTotal }, { n: 'PL', v: L.plQty }], '');
-    if (L.lines.length && has(L.invTotal)) {
-      add(same(amtTotal, L.invTotal) ? 'ok' : 'err', same(amtTotal, L.invTotal) ? `Tổng trị giá các dòng = tổng Invoice: ${fmt(amtTotal, 2)} USD`
-        : `Tổng các dòng ${fmt(amtTotal, 2)} USD khác tổng Invoice ${fmt(L.invTotal, 2)} USD (dòng F.O.C có tính trị giá thì Invoice cũng phải có)`);
-    }
-    L.lines.forEach((l, i) => { if (has(l.invAmount) && !same(lineAmt(l), l.invAmount)) add('err', `Dòng ${i + 1} ${l.code}: SL × đơn giá = ${fmt(lineAmt(l), 2)}, Invoice ghi ${fmt(l.invAmount, 2)}`); });
-    if (L.coNo && L.invNo && L.coText) {
-      const ct = normKey(L.coText), iv = normKey(L.invNo);
-      if (ct.includes(iv)) add('ok', 'Số Invoice trên C/O khớp');
-      else if (ct.includes(iv.slice(0, -1))) add('warn', `Số Invoice trên C/O đọc không trọn (bản scan xuống dòng) — nhìn lại ô 10 của C/O: ${L.invNo}`);
-      else add('err', `Không thấy số Invoice ${L.invNo} trên C/O`);
-    }
-    if (L.coDate && L.blDate) {
-      const days = Math.round((new Date(L.coDate) - new Date(L.blDate)) / 864e5);
-      if (days > 3) add('warn', `C/O cấp ${dmy(L.coDate)}, sau ngày tàu chạy ${days} ngày — xem C/O có đánh dấu "Issued Retroactively" không`);
-      else add('ok', `C/O cấp ${dmy(L.coDate)}, ngày tàu chạy ${dmy(L.blDate)}`);
-    }
-    if (L.coNo) add('ok', `Có C/O Form ${L.coForm || 'E'} số ${L.coNo}: thuế NK theo ${String(L.coForm || 'E').toUpperCase() === 'E' ? 'ACFTA' : 'MFN (form khác E: tự kiểm tra biểu thuế)'}, số C/O đã ghép vào phần ghi chú`);
-    else if (L.lines.length) add('warn', 'Chưa có C/O: thuế NK tính theo MFN');
-    if (L.blHs && L.lines.length) {
-      const heads = String(L.blHs).split(',').map((h) => h.slice(0, 4));
-      const bad = L.lines.filter((l) => lineHS(l) && !heads.includes(lineHS(l).slice(0, 4)));
-      if (bad.length) add('warn', `HS trên Bill là ${L.blHs}, khác nhóm với dòng ${bad.map((l) => l.code || '?').join(', ')} — xem lại`);
-    }
-    // Arrival Notice, hoá đơn cước / bảo hiểm
-    if (L.docs.an) {
-      if (L.anBl && L.blNo) add(normKey(L.anBl).includes(normKey(L.blNo)) || normKey(L.blNo).includes(normKey(L.anBl)) ? 'ok' : 'err', normKey(L.anBl).includes(normKey(L.blNo)) || normKey(L.blNo).includes(normKey(L.anBl)) ? `Số vận đơn trên Arrival Notice khớp Bill (${L.blNo})` : `Arrival Notice ghi vận đơn ${L.anBl}, khác Bill ${L.blNo}`);
-      if (L.anVessel && L.vessel && !normKey(L.anVessel).includes(normKey(L.vessel).slice(0, 8)) && !normKey(L.vessel).includes(normKey(L.anVessel).slice(0, 8))) add('warn', `Tên tàu trên AN (${L.anVessel}) khác Bill (${L.vessel}) — tàu có thể đã đổi, khai theo AN`);
-      if (!L.arrival) add('warn', 'Không đọc được ngày hàng đến trên Arrival Notice — nhập tay ở mục 2');
-    }
-    ['fr', 'bh'].forEach((k) => {
-      const d = L.feeDoc[k]; if (!d) return;
-      const on = d.rows.filter((r) => r.on); const off = d.rows.filter((r) => !r.on);
-      if (!on.length) add('err', `${DOCNAME[k]} ${d.file}: chưa chọn dòng phí nào — tick dòng cần tính ở mục 1`);
-      else add('ok', `${k === 'fr' ? 'Phí vận chuyển' : 'Phí bảo hiểm'} lấy từ ${d.file}: ${on.map((x) => `${x.desc} = ${fmt(x.amt, 2)} ${x.cur}`).join(' + ')}`);
-      if (k === 'fr' && off.length) add('ok', `Không cộng vào trị giá hải quan: ${off.slice(0, 6).map((x) => x.desc).join(', ')}`);
-      if (on.some((r) => r.cur === 'USD') && on.some((r) => r.cur !== 'USD')) add('warn', `${DOCNAME[k]}: có cả dòng USD và VND — tool quy USD sang VND theo tỷ giá tính thuế`);
-    });
-    // linh kiện
+    const focLines = L.lines.filter((l) => l.invFoc || peek(l).foc);
+    if (focLines.length) add('ok', `${focLines.length} dòng hàng F.O.C — khai theo SL × đơn giá: ${fmt(focLines.reduce((a, l) => a + lineAmt(l), 0), 2)} USD`);
+    L.lines.forEach((l, i) => { if (has(l.invAmount) && Math.abs(lineAmt(l) - l.invAmount) > 0.01) add('err', `Dòng ${i + 1} ${l.code}: SL × đơn giá = ${fmt(lineAmt(l), 2)}, form ghi trị giá ${fmt(l.invAmount, 2)}`); });
     L.lines.forEach((l, i) => {
-      const h = peek(l); if (!h.part) return;
-      const tr = V.part(enOf(h)); const nm = l.code || enOf(h) || `dòng ${i + 1}`;
-      if (h.hsSrc === 'sug') add('warn', `Dòng ${i + 1} (${nm}): mã HS ${fmtHS(h.hs)} là gợi ý tự động cho linh kiện — bấm ô Mã HS, chọn lại 1 mã để xác nhận`);
-      if (!h.parent && !tr.parentVi) add('warn', `Dòng ${i + 1} (${nm}): linh kiện chưa rõ của máy nào — chọn "của máy" để ghép mô tả và gợi ý HS`);
-      if (tr.unknown.length && !(h.descManual && h.desc)) add('warn', `Dòng ${i + 1} (${nm}): chưa dịch được "${tr.unknown.join('", "')}" — sửa tay mô tả`);
-    });
-    // hợp đồng
-    const s = sup();
-    if (!s.name) add('warn', 'Chưa có nhà cung cấp — nạp hợp đồng (PDF / Word) hoặc thêm ở ⚙️ Cài đặt');
-    else if (!s.contractNo) add('warn', `Chưa có hợp đồng của ${s.name} — nạp file hợp đồng để lấy số, ngày, hạn hợp đồng`);
-    if (s.contractEnd) { const ref = L.invDate || new Date().toISOString().slice(0, 10); add(s.contractEnd >= ref ? 'ok' : 'err', s.contractEnd >= ref ? `Hợp đồng ${s.contractNo || ''} còn hiệu lực đến ${dmy(s.contractEnd)}` : `Hợp đồng ${s.contractNo || ''} hết hạn ${dmy(s.contractEnd)} trước ngày Invoice`); }
-    if (s.endGuess) add('warn', `Ngày hết hạn hợp đồng đọc không rõ (bị che / mờ) — tool lấy ngày cuối tháng ${dmy(s.contractEnd)}. Kiểm lại trên hợp đồng rồi sửa ở ⚙️ Cài đặt nếu khác`);
-    if (s.contractDate2 && s.contractDate && s.contractDate2 !== s.contractDate) add('warn', `Hợp đồng ghi 2 ngày khác nhau: đầu trang ${dmy(s.contractDate)}, điều khoản hiệu lực ${dmy(s.contractDate2)} — tờ khai đang lấy ${dmy(s.contractDate)}. Nên đính chính với NCC`);
-    if (s.contractOcr) add('warn', 'Hợp đồng là bản scan — số, ngày đã đọc bằng nhận dạng chữ, xem lại một lần ở mục 1');
-    // mã HS & Landed Cost
-    L.lines.forEach((l, i) => {
-      const hs = lineHS(l); const R = rateOf(hs);
-      if (!hs) add('err', `Dòng ${i + 1} ${l.code || ''}: chưa có mã HS — bấm ô Mã HS để tra, hoặc 🚢 Lấy HS từ Landed Cost`);
-      else if (R && R.bad) add('err', `Dòng ${i + 1} ${l.code || ''}: mã ${fmtHS(hs)} không có trong biểu thuế`);
+      const hs = lineHS(l); const R = rateOf(hs, l); const nm = l.code || enOf(peek(l)) || `dòng ${i + 1}`;
+      if (!hs) add('err', `Dòng ${i + 1} (${nm}): chưa có mã HS — bấm ô Mã HS để tra, hoặc 🚢 Lấy HS từ Landed Cost`);
+      else if (R && R.bad) add('err', `Dòng ${i + 1} (${nm}): mã ${fmtHS(hs)} không có trong biểu thuế`);
       const p = l.code ? lcFind(l.code) : null;
-      if (hs && p && lcHS(p) && lcHS(p) !== hs) add('warn', `${l.code}: Landed Cost đang để mã ${fmtHS(lcHS(p))}, phiếu khai dùng ${fmtHS(hs)} — thống nhất 1 mã`);
+      if (hs && p && lcHS(p) && lcHS(p) !== hs) add('warn', `${l.code}: Landed Cost đang để mã ${fmtHS(lcHS(p))}, danh sách dùng ${fmtHS(hs)} — thống nhất 1 mã`);
+      const h = peek(l);
+      if (h.part) {
+        const tr = V.part(enOf(h));
+        if (h.hsSrc === 'sug') add('warn', `Dòng ${i + 1} (${nm}): mã HS ${fmtHS(h.hs)} là gợi ý tự động cho linh kiện — bấm ô Mã HS, chọn lại 1 mã để xác nhận`);
+        if (!h.parent && !tr.parentVi) add('warn', `Dòng ${i + 1} (${nm}): linh kiện chưa rõ của máy nào — chọn "của máy" để ghép mô tả và gợi ý HS`);
+        if (tr.unknown.length && !(h.descManual && h.desc)) add('warn', `Dòng ${i + 1} (${nm}): chưa dịch được "${tr.unknown.join('", "')}" — sửa tay mô tả`);
+      }
+      if (!lineDesc(l)) add('err', `Dòng ${i + 1} (${nm}): chưa có mô tả`);
     });
-    // tem phụ
     temCodes().forEach((code) => {
       const t = temOf(code); const miss = [['nameVi', 'tên hàng'], ['makerVi', 'nhà sản xuất'], ['makerAddrVi', 'địa chỉ NSX']].filter(([k]) => !t[k]).map((x) => x[1]);
       if (!S.gen.importerName) miss.push('nhà nhập khẩu (⚙️ Cài đặt)');
       if (miss.length) add('warn', `Tem phụ ${code} còn thiếu: ${miss.join(', ')}`);
       const unk = t.auto.unknown.filter((u) => [t.nameVi, t.makerVi, t.makerAddrVi].some((v) => String(v).includes(u)));
-      if (unk.length) add('warn', `Tem phụ ${code}: chưa dịch được "${unk.join('", "')}" — sửa tay ở mục 4`);
+      if (unk.length) add('warn', `Tem phụ ${code}: chưa dịch được "${unk.join('", "')}" — sửa tay ở mục 2`);
       if (t.barcode && !eanFix(t.barcode).ok) add('err', `Tem phụ ${code}: mã vạch ${t.barcode} sai chuẩn EAN-13`);
     });
-    if (L.pol && !P.POL[String(L.pol).toUpperCase()]) add('warn', `Chưa có mã cảng xếp cho "${L.pol}" — gõ mã trên ECUS`);
-    const pod = podInfo();
-    if (L.pod && !pod) add('warn', `Chưa có mã cảng dỡ cho "${L.pod}"`);
-    else if (pod && !pod.store && !L.storeCode) add('warn', `Chưa có mã địa điểm lưu kho cho ${pod.name} — nạp Arrival Notice hoặc xem trên AN`);
-    const miss = { arrival: 'ngày hàng đến', freight: 'phí vận chuyển', ins: 'phí bảo hiểm', rate: 'tỷ giá tính thuế' };
-    const m = Object.keys(miss).filter((k) => !has(L[k])).map((k) => miss[k]);
-    if (m.length) add('warn', 'Còn thiếu: ' + m.join(', '));
+    if (L.lines.length && !out.some((x) => x[0] !== 'ok')) add('ok', 'Đủ mô tả và mã HS cho mọi dòng — xuất file được');
     const order = { err: 0, warn: 1, ok: 2 };
-    $('#checks').innerHTML = out.length ? out.sort((a, b) => order[a[0]] - order[b[0]]).map(([lv, msg]) => `<li class="${lv}"><i>${{ ok: 'Khớp', warn: 'Lưu ý', err: 'Sai lệch' }[lv]}</i><span>${esc(msg)}</span></li>`).join('')
-      : '<li><span class="muted">Nạp chứng từ để kiểm tra.</span></li>';
-  }
-
-  /* ======================= 6. PHIẾU KHAI ======================= */
-  function podInfo() { const s = String(L.pod || ''); for (const [re, v] of P.POD) if (re.test(s)) return v; return null; }
-  function polInfo() { const k = String(L.pol || '').toUpperCase().trim(); return P.POL[k] ? { code: P.POL[k][0], name: P.POL[k][1] } : null; }
-  const term = () => String(L.incoterm || '').trim().split(/\s+/)[0].toUpperCase();
-  const contCount = () => (L.cont ? String(L.cont).split(',').filter((x) => x.trim()).length : '');
-  function note() {
-    const s = sup(); const parts = [];
-    if (s.contractNo) parts.push(s.contractNo, ddmmyyyy(s.contractDate), ddmmyyyy(s.contractEnd));
-    let t = parts.filter(Boolean).join('#&');
-    if (L.coNo) t += (t ? '#&' : '') + `CO FORM ${String(L.coForm || 'E').toUpperCase()} SỐ ${L.coNo} ngày ${dmy(L.coDate)}`;
-    return t;
-  }
-  const C = (v, fixed) => ({ v: has(v) ? String(v) : '', fixed });
-  function rowsT1() {
-    const g = S.gen, s = sup(), pol = polInfo(), pod = podInfo();
-    return [
-      ['Mã loại hình', [C(g.loaiHinh, 1)]], ['Cơ quan hải quan', [C(g.coQuan, 1)]], ['Mã bộ phận xử lý', [C(g.boPhan, 1)]],
-      ['Người xuất khẩu – Tên', [C(s.name, 1)]], ['Người xuất khẩu – Địa chỉ', [C(s.addr1, 1), C(s.addr2, 1), C(s.addr3, 1), C(s.addr4, 1)].filter((x, i) => i === 0 || x.v)],
-      ['Mã nước', [C(s.country || L.origin, 1)]],
-      ['Số vận đơn', [C(L.blNo && L.blDate ? ddmmyy(L.blDate) + L.blNo : '')]],
-      ['Số lượng kiện', [C(raw(L.pkgs)), C('CT', 1)]], ['Tổng trọng lượng (Gross)', [C(raw(L.gw)), C('KGM', 1)]],
-      ['Số lượng container', [C(contCount())]],
-      ['Địa điểm lưu kho', [C(L.storeCode || (pod && pod.store)), C(L.storeCode && pod && L.storeCode !== pod.store ? '' : pod && pod.storeName)]], ['Địa điểm dỡ hàng', [C(pod && pod.code), C(pod && pod.name)]],
-      ['Địa điểm xếp hàng', [C(pol && pol.code), C(pol && pol.name)]], ['Phương tiện vận chuyển', [C(g.ptvc, 1), C(L.vessel)]],
-      ['Ngày hàng đến', [C(dmy(L.arrival))]],
-    ];
-  }
-  function rowsT2() {
-    const g = S.gen;
-    return [
-      ['Số hoá đơn', [C('A', 1), C(L.invNo)]], ['Ngày phát hành', [C(dmy(L.invDate))]], ['Phương thức thanh toán', [C(g.pttt, 1)]],
-      ['Tổng trị giá hoá đơn', [C('A', 1), C(term()), C('USD', 1), C(raw(L.invTotal))]], ['Mã phân loại khai trị giá', [C(g.mpltg, 1)]],
-      ['Phí vận chuyển', [C('A', 1), C(L.freightCur || 'VND', 1), C(raw(L.freight))]], ['Phí bảo hiểm', [C('A', 1), C(L.insCur || 'VND', 1), C(raw(L.ins))]],
-      ['Chi tiết khai trị giá', [C(L.blDate ? ddmmyyyy(L.blDate) + '#&' : '')]],
-      ['Giấy phép nhập khẩu', [C('RK01', 1), C(L.permit)]], ['Phần ghi chú', [C(note())]],
-    ];
-  }
-  function rowsT3() {
-    const r = [];
-    L.lines.forEach((l, i) => {
-      const hs = lineHS(l); const R = rateOf(hs); const u = lineUnit(l);
-      r.push([`Dòng ${i + 1} · ${l.code || ''}`, [], 'head']);
-      r.push(['Mã số hàng hoá', [C(hs)]], ['Mô tả hàng hoá', [C(lineDesc(l))]],
-        ['Số lượng (1) / ĐVT', [C(raw(l.qty)), C(u, 1)]], ['Số lượng (2) / ĐVT', [C(raw(l.qty)), C(u, 1)]],
-        ['Trị giá hoá đơn', [C(raw(lineAmt(l)))]], ['Đơn giá hoá đơn', [C(raw(l.price)), C('USD', 1), C(u, 1)]],
-        ['Nước xuất xứ', [C(L.origin, 1)]], ['Mã biểu thuế NK', [C(btNK(l))]], ['Mã biểu thuế VAT', [C(S.gen.btVat)]],
-        ['Thuế suất NK / VAT', [C(nkOf(l, R) !== '' ? nkOf(l, R) + '%' : ''), C(vatOf(l, R) !== '' ? vatOf(l, R) + '%' : '')]]);
-    });
-    if (!r.length) r.push(['Chưa có dòng hàng', [C('')]]);
-    return r;
+    $('#checks').innerHTML = out.length ? out.sort((a, b) => order[a[0]] - order[b[0]]).map(([lv, msg]) => `<li class="${lv}"><i>${{ ok: 'Ổn', warn: 'Lưu ý', err: 'Cần sửa' }[lv]}</i><span>${esc(msg)}</span></li>`).join('')
+      : '<li><span class="muted">Nạp form danh sách hàng để kiểm tra.</span></li>';
   }
   const nkOf = (l, R) => (has(l.nkOv) ? l.nkOv : R && !R.bad && isFinite(R.nk) ? R.nk : '');
   const vatOf = (l, R) => (has(l.vatOv) ? l.vatOv : R && !R.bad ? R.vat : '');
-  const isFormE = () => has(L.coNo) && String(L.coForm || 'E').toUpperCase() === 'E';
-  const btNK = (l) => (l.code ? (modelOf(l.code) || {}).bt : l.bt) || (isFormE() ? S.gen.btFormE : '');
-  let tab = 't1';
-  $('#tabs').addEventListener('click', (e) => {
-    const b = e.target.closest('button'); if (!b) return; tab = b.dataset.tab;
-    document.querySelectorAll('#tabs button').forEach((x) => x.setAttribute('aria-selected', x === b)); renderOut();
-  });
-  function renderOut() {
-    const rows = tab === 't1' ? rowsT1() : tab === 't2' ? rowsT2() : rowsT3();
-    $('#out').innerHTML = rows.map(([lbl, chips, kind]) => kind === 'head' ? `<div class="row head">${esc(lbl)}</div>`
-      : `<div class="row"><div class="lbl">${esc(lbl)}</div><div class="chips">${chips.map((c) => c.v
-        ? `<button type="button" class="chip${c.fixed ? ' fixed' : ''}" data-copy="${esc(c.v)}" title="Bấm để copy">${esc(c.v)}</button>`
-        : '<span class="chip miss">còn thiếu</span>').join('')}</div></div>`).join('');
-  }
-  $('#out').addEventListener('click', (e) => { const b = e.target.closest('[data-copy]'); if (b) copyText(b.dataset.copy, b); });
-
-  /* ======================= 7. THUẾ ======================= */
-  function taxCalc() {
-    const rate = parseNum(L.rate); const t = term();
-    const addFr = /^(FOB|EXW|FCA)$/.test(t), addIns = addFr || /^(CFR|CNF)$/.test(t);
-    const vndOf = (v, cur) => (parseNum(v) || 0) * (cur === 'USD' ? rate : 1);
-    const extra = (addFr ? vndOf(L.freight, L.freightCur) : 0) + (addIns ? vndOf(L.ins, L.insCur) : 0);
-    const tot = L.lines.reduce((a, l) => a + lineAmt(l), 0);
-    let base = 0, nk = 0, vat = 0;
-    L.lines.forEach((l) => {
-      const R = rateOf(lineHS(l)); const amt = lineAmt(l);
-      const tg = amt * rate + (tot ? extra * amt / tot : 0);
-      const n = tg * (parseNum(nkOf(l, R)) || 0) / 100;
-      base += tg; nk += n; vat += (tg + n) * (parseNum(vatOf(l, R)) || 0) / 100;
-    });
-    return { ok: rate > 0 && L.lines.length > 0, base: Math.round(base), nk: Math.round(nk), vat: Math.round(vat) };   // ECUS làm tròn từng sắc thuế
-  }
-  function renderTax() {
-    const x = taxCalc(); const v = (n) => (x.ok ? GauBep.fmt.vnd(n) : '–');
-    $('#kpis').innerHTML = `<div class="kpi"><div class="label">Trị giá tính thuế</div><div class="value">${v(x.base)}</div></div>
-      <div class="kpi"><div class="label">Thuế nhập khẩu</div><div class="value">${v(x.nk)}</div></div>
-      <div class="kpi"><div class="label">Thuế GTGT</div><div class="value">${v(x.vat)}</div></div>
-      <div class="kpi accent"><div class="label">Tổng thuế phải nộp</div><div class="value">${v(x.nk + x.vat)}</div></div>`;
-  }
+  const btNK = (l) => (l.code ? (modelOf(l.code) || {}).bt : l.bt) || (l.co ? S.gen.btFormE : '');
 
   /* ======================= XUẤT FILE ECUS ======================= */
   const ECUS_HEAD = ['STT', 'Mã hàng', 'Tên hàng (mô tả chi tiết)', 'Mã HS', 'Xuất xứ', 'Lượng', 'Đơn vị tính', 'Lượng 2', 'Đơn vị tính 2',
@@ -1182,7 +851,7 @@
     'Mã biểu thuế VAT', 'Thuế suất VAT(%)', 'Tiền thuế VAT'];
   function ecusAoa() {
     return [ECUS_HEAD, ...L.lines.map((l, i) => [
-      String(i + 1), null, lineDesc(l) || '', String(lineHS(l) || ''), String(L.origin || ''), parseNum(l.qty), lineUnit(l), parseNum(l.qty), lineUnit(l),
+      String(i + 1), null, lineDesc(l) || '', String(lineHS(l) || ''), lineOrigin(l), parseNum(l.qty), lineUnit(l), parseNum(l.qty), lineUnit(l),
       parseNum(l.price), lineAmt(l), null, null, btNK(l) || null, null, null, null, null, null, null, null, null, S.gen.btVat || null, null, null,
     ])];
   }
@@ -1195,50 +864,28 @@
       const ws = XLSX.utils.aoa_to_sheet(ecusAoa());
       ws['!cols'] = [6, 10, 60, 12, 8, 10, 10, 10, 10, 12, 14, 12, 14, 10, 8, 12, 10, 8, 12, 10, 8, 12, 10, 8, 12].map((w) => ({ wch: w }));
       const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-      const safe = String(L.invNo || 'lo').replace(/[^\w\-]+/g, '_');
+      const safe = String(L.name || 'lo').replace(/\.[^.]+$/, '').replace(/[^\w\-]+/g, '_').slice(0, 40);
       XLSX.writeFile(wb, `DS_KHAI_HQ_${safe}_${GauBep.today()}.xls`, { bookType: 'biff8' });
       GauBep.toast('Đã xuất file danh sách hàng 🎉');
     } catch (e) { GauBep.toast(e.message || 'Không xuất được file'); }
   };
-
   /* ======================= CÀI ĐẶT ======================= */
-  const SUP_FIELDS = [['key', 'Từ khoá nhận diện trên Invoice'], ['name', 'Tên người xuất khẩu (ECUS)'], ['addr1', 'Địa chỉ dòng 1'], ['addr2', 'Địa chỉ dòng 2'], ['addr3', 'Địa chỉ dòng 3'], ['addr4', 'Địa chỉ dòng 4'],
-    ['country', 'Mã nước'], ['brand', 'Nhãn hiệu'], ['contractNo', 'Số hợp đồng'], ['contractDate', 'Ngày hợp đồng', 'date'], ['contractEnd', 'Hợp đồng hết hạn', 'date'],
-    ['nameVi', 'Tên tiếng Việt (tem phụ)', '', 'wide'], ['addrVi', 'Địa chỉ tiếng Việt (tem phụ)', '', 'wide']];
   function renderSettings() {
     const gf = (arr) => arr.map(([k, lbl, tip]) => `<div class="field${k === 'importerAddr' || k === 'usage' || k === 'storage' ? ' wide' : ''}"><label>${lbl}${tip ? ` <span class="hint" tabindex="0" data-tip="${esc(tip)}">?</span>` : ''}</label><input data-g="${k}" value="${esc(S.gen[k])}"></div>`).join('');
     $('#genForm').innerHTML = gf(GEN_FIELDS);
     $('#temGenForm').innerHTML = gf(TEM_GEN);
-    $('#supList').innerHTML = S.sups.length ? S.sups.map((s, i) => `<div class="sup" data-sid="${s.id}"><div class="sup-head"><span>NCC ${i + 1}${s.name ? ' · ' + esc(s.name) : ''}${s.contractFile ? ` <span class="muted small">· HĐ: ${esc(s.contractFile)}</span>` : ''}</span>
-        <span><button class="btn btn-ghost btn-sm" data-act="retrans" title="Dịch lại tên + địa chỉ tiếng Việt từ bản tiếng Anh">↺ Dịch lại</button> <button class="btn btn-ghost btn-sm" data-act="delsup">Xoá</button></span></div>
-      <div class="form-grid">${SUP_FIELDS.map(([k, lbl, t, w]) => `<div class="field${w ? ' wide' : ''}"><label>${lbl}</label><input data-s="${k}"${t ? ` type="${t}"` : ''} value="${esc(s[k] || '')}"></div>`).join('')}</div></div>`).join('')
-      : '<p class="muted">Chưa có nhà cung cấp — nạp file hợp đồng là tool tự tạo.</p>';
     const codes = Object.keys(S.models).sort();
     $('#modelBody').innerHTML = codes.length ? codes.map((c) => { const m = S.models[c]; return `<tr data-code="${esc(c)}">
       <td><input data-m="code" value="${esc(c)}" style="width:130px"></td><td><input data-m="hs" value="${esc(fmtHS(m.hs))}" style="width:120px"></td>
-      <td class="wrap">${esc(descOf(c))}</td><td><input data-m="unit" value="${esc(m.unit || 'PCE')}" style="width:64px"></td>
-      <td><input data-m="bt" value="${esc(m.bt || '')}" placeholder="tự động" style="width:84px" title="Để trống: tự dùng mã biểu thuế Form E khi có C/O"></td>
+      <td class="wrap">${esc(m.part ? genPartDesc(m) : descOf(c))}</td><td><input data-m="unit" value="${esc(m.unit || 'PCE')}" style="width:64px"></td>
+      <td><input data-m="bt" value="${esc(m.bt || '')}" placeholder="tự động" style="width:84px" title="Để trống: tự dùng mã biểu thuế Form E khi dòng có C/O"></td>
       <td><button class="btn btn-ghost btn-sm btn-icon" data-act="delmodel" aria-label="Xoá model">✕</button></td></tr>`; }).join('')
-      : '<tr><td colspan="6" class="muted">Chưa có model — nạp Invoice là tool tự thêm.</td></tr>';
+      : '<tr><td colspan="6" class="muted">Chưa có model — nạp form danh sách hàng là tool tự thêm.</td></tr>';
     const n = lcProducts().length;
     $('#lcInfo').textContent = n ? `Landed Cost trên máy này có ${n} sản phẩm.` : 'Landed Cost trên máy này chưa có sản phẩm (ngoài ví dụ).';
   }
   const onGen = (e) => { const k = e.target.dataset.g; if (!k) return; S.gen[k] = e.target.value.trim(); saveSet(); later(); };
   $('#genForm').addEventListener('change', onGen); $('#temGenForm').addEventListener('change', onGen);
-  $('#supList').addEventListener('change', (e) => {
-    const k = e.target.dataset.s; if (!k) return; const s = S.sups.find((x) => x.id === e.target.closest('.sup').dataset.sid);
-    s[k] = e.target.value.trim(); if (['country', 'name', 'key', 'addr1', 'addr2', 'addr3', 'addr4', 'contractNo'].includes(k)) s[k] = s[k].toUpperCase();
-    if (k === 'contractEnd') s.endGuess = false;
-    if (k === 'contractDate') s.contractDate2 = '';
-    saveSet(); later();
-  });
-  $('#supList').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-act]'); if (!b) return; const id = b.closest('.sup').dataset.sid; const s = S.sups.find((x) => x.id === id);
-    if (b.dataset.act === 'delsup') { S.sups = S.sups.filter((x) => x.id !== id); if (L.supId === id) L.supId = (S.sups[0] || {}).id || ''; }
-    if (b.dataset.act === 'retrans') { s.nameVi = V.company(s.name).vi; s.addrVi = V.address(s.addrRaw || [s.addr1, s.addr2, s.addr3].filter(Boolean).join(', '), s.country || 'CN').vi; GauBep.toast('Đã dịch lại — sửa tay các tên riêng nếu cần'); }
-    saveSet(); saveLot(); renderAll();
-  });
-  $('#btnAddSup').onclick = () => { const s = { id: uid(), country: 'CN' }; S.sups.push(s); if (!L.supId) L.supId = s.id; saveSet(); saveLot(); renderAll(); };
   $('#modelBody').addEventListener('change', (e) => {
     const k = e.target.dataset.m; if (!k) return; const old = e.target.closest('tr').dataset.code; const m = S.models[old];
     if (k === 'code') {
@@ -1254,7 +901,7 @@
   });
   $('#btnAddModel').onclick = () => {
     let n = Object.keys(S.models).length + 1; while (S.models['MODEL-' + n]) n++;
-    S.models['MODEL-' + n] = { hs: '', unit: 'PCE', bt: '', desc: '', descManual: false, tem: {}, img: '', supId: L.supId }; saveSet(); renderAll();
+    S.models['MODEL-' + n] = { hs: '', unit: 'PCE', bt: '', desc: '', descManual: false, tem: {}, img: '' }; saveSet(); renderAll();
     GauBep.toast('Đã thêm dòng MODEL-' + n + ' — sửa lại mã model, HS');
   };
   $('#btnFromLC').onclick = () => {
@@ -1267,7 +914,7 @@
   $('#btnCloseSettings').onclick = () => { $('#settingsCard').hidden = true; };
   $('#btnBackup').onclick = () => {
     const blob = new Blob([JSON.stringify({ app: 'customs-entry', v: 1, settings: S }, null, 1)], { type: 'application/json' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `PhieuKhai_SaoLuu_${GauBep.today()}.json`;
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `DanhSachHang_SaoLuu_${GauBep.today()}.json`;
     document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
   };
   $('#fileBackup').addEventListener('change', async (e) => {
@@ -1276,31 +923,27 @@
       const d = JSON.parse(await f.text()); if (d.app !== 'customs-entry' || !d.settings) throw new Error('File không đúng bản sao lưu của tool này');
       S = d.settings; S.gen = { ...DEF_GEN, ...(S.gen || {}) }; S.sups = S.sups || []; S.models = S.models || {};
       Object.values(S.models).forEach((m) => { m.tem = m.tem || {}; });
-      if (!S.sups.find((x) => x.id === L.supId)) L.supId = (S.sups[0] || {}).id || '';
       saveSet(); saveLot(); renderAll(); GauBep.toast('Đã nạp bản sao lưu');
     } catch (err) { GauBep.toast(err.message); }
   });
 
   /* ======================= MẪU / LÀM MỚI ======================= */
-  $('#btnNew').onclick = () => { L = newLot(); hsLine = null; saveLot(); renderAll(); GauBep.toast('Đã tạo lô mới'); };
+  $('#btnNew').onclick = () => { L = newLot(); hsLine = null; TEM_LOG = []; TEM_PENDING = []; saveLot(); renderAll(); GauBep.toast('Đã tạo lô mới'); };
   $('#btnSample').onclick = () => {
-    if (!S.sups.find((x) => x.id === 'vd')) S.sups.push({ id: 'vd', key: 'VDSUPPLIER', name: 'NINGBO VDSUPPLIER ELECTRIC APPLIANCE CO., LTD (VÍ DỤ)', addr1: 'NO 1 EXAMPLE ROAD', addr2: 'BINHAI ECONOMIC DEVELOPMENT ZONE', addr3: 'CIXI NINGBO CITY ZHEJIANG PROVINCE', addr4: 'CHINA',
-      addrRaw: 'NO.1, Example Road, Binhai Economic Development Zone, Cixi, Ningbo City, Zhejiang', country: 'CN', brand: 'Vidu', contractNo: 'VD-HD-01', contractDate: '2025-08-01', contractEnd: '2026-12-31' });
-    if (!S.models['VD-QUAT01']) S.models['VD-QUAT01'] = { hs: '84145191', hsSrc: '', unit: 'PCE', bt: '', desc: '', descManual: false, supId: 'vd', invName: 'Air Circulation Fan', img: '',
-      tem: { kind: 'Dạng quạt đứng', voltage: '220V ~ 50Hz', power: '40W', pack: '1 cái / thùng', control: 'Chạm / Remote', barcode: '893000000000' } };
-    L = { sample: true, docs: { bill: 'vi-du-bill.pdf', ci: 'vi-du-invoice.pdf', pl: 'vi-du-packing-list.pdf', co: 'vi-du-co.pdf' }, supId: 'vd', origin: 'CN',
-      blNo: 'VDHCM0000001', blDate: '2026-10-04', vessel: 'VD VESSEL V001', pol: 'NINGBO', pod: 'HO CHI MINH(SPITC)', cont: 'VDCU0000001 / 40HQ', pkgs: 500, gw: 3000, cbm: 60,
-      invNo: 'VD-INV-001', invDate: '2026-09-20', incoterm: 'FOB NINGBO', invTotal: 7500, plPkgs: 500, plGw: 3000, plNw: 2500, plQty: 500,
-      coNo: 'E26VD0000000001', coForm: 'E', coDate: '2026-10-06', coPkgs: 500, coGw: 3000, coText: 'VD-INV-001',
-      arrival: '2026-10-11', freight: 20000000, ins: 200000, rate: 25800, permit: '',
-      lines: [{ id: uid(), code: 'VD-QUAT01', qty: 500, price: 15, invAmount: 7500, unit: 'PCE' }] };
+    S.models['VD-QUAT01'] = S.models['VD-QUAT01'] || { hs: '84145191', hsSrc: '', unit: 'PCE', bt: '', desc: '', descManual: false, invName: 'Air Circulation Fan', img: '', brand: 'Vidu',
+      makerEn: 'Ningbo Vidu Electric Appliance Co., Ltd (ví dụ)', makerAddrEn: 'No.1, Example Road, Cixi, Ningbo City, Zhejiang',
+      tem: { kind: 'Dạng quạt đứng', voltage: '220V ~ 50Hz', power: '40W', pack: '1 cái / thùng', control: 'Chạm / Remote' } };
+    L = { name: 'vi-du.xlsx', sample: true, lines: [] };
+    applyForm([
+      { code: 'VD-QUAT01', en: 'Air Circulation Fan', desc: '', hs: '', qty: 500, unit: 'PCE', price: 15, amount: 7500, origin: 'CN', co: true, partRaw: '', parent: '', foc: false, brand: '', makerEn: '', makerAddrEn: '' },
+      { code: '', en: 'Fan blade (plastic) for VD-QUAT01', desc: '', hs: '', qty: 20, unit: 'PCE', price: 0.5, amount: 10, origin: 'CN', co: true, partRaw: '', parent: '', foc: true, brand: '', makerEn: '', makerAddrEn: '' },
+    ]);
     saveSet(); saveLot(); renderAll(); GauBep.toast('Đã nạp lô ví dụ 🐼');
   };
 
   let pending = false;
   function later() { if (pending) return; pending = true; setTimeout(() => { pending = false; renderAll(); }, 0); }
-  function renderAll() {
-    L.docs = L.docs || {}; L.docSet = L.docSet || {}; L.feeDoc = L.feeDoc || {}; renderLot(); renderLines(); renderTem(); renderTemLog(); renderChecks(); renderOut(); renderTax(); renderSettings(); }
+  function renderAll() { L.lines = L.lines || []; renderLines(); renderTem(); renderTemLog(); renderChecks(); renderSettings(); $('#lotName').textContent = L.name ? `· ${L.name}` : ''; }
   renderAll();
   loadTariff();
   loadLcKeywords();

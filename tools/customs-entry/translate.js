@@ -120,7 +120,7 @@
     let t = low(String(name || '').replace(/\([^)]*\)/g, ' ')).replace(/\bco\s*ltd\b|\bcompany limited\b|\bco limited\b|\bcorporation\b|\bcorp\b|\binc\b|\bcompany\b|\bco\b|\bltd\b|\blimited\b/g, ' ').replace(/\s+/g, ' ').trim();
     const group = /\bgroup\b/.test(t); t = t.replace(/\bgroup\b/g, ' ').replace(/\s+/g, ' ').trim();
     const words = t.split(' ').filter(Boolean);
-    const places = []; while (words.length && placeMap.has(words[0])) places.push(placeMap.get(words.shift())[1]);
+    const places = []; while (words.length && placeMap.has(words[0])) { places.push(placeMap.get(words.shift())[1]); while (/^(city|province|district|county|town|shi)$/.test(words[0] || '')) words.shift(); }
     const pcs = phrasePieces(words.join(' '), ORG);
     // tên riêng (phần không dịch được) đứng trước các từ ngành nghề trong tiếng Anh
     const brand = pcs.filter((p) => p.raw).map((p) => cap(p.raw));
@@ -172,8 +172,8 @@
       }
       const r = placeRun(t);
       if (r.out.length && !r.rest.length) { out.push(...r.out); return; }
-      const fl = t.match(/^(?:room|rm)\s*(\S+)|^(\S+)\s*(?:floor|f)$|^(?:building|bldg)\s*(\S+)$/);
-      if (fl) { out.push(fl[1] ? 'Phòng ' + fl[1].toUpperCase() : fl[2] ? 'Tầng ' + fl[2].toUpperCase() : 'Tòa ' + fl[3].toUpperCase()); return; }
+      const fl = t.match(/^(?:room|rm)\s*(\S+)$|^(\S+)\s*(?:room|rm)$|^(\S+)\s*(?:floor|f)$|^(?:floor)\s*(\S+)$|^(?:building|bldg)\s*(\S+)$|^(\S+)\s*(?:building|bldg)$/);
+      if (fl) { out.push(fl[1] || fl[2] ? 'Phòng ' + (fl[1] || fl[2]).toUpperCase() : fl[3] || fl[4] ? 'Tầng ' + (fl[3] || fl[4]).toUpperCase() : 'Tòa ' + (fl[5] || fl[6]).toUpperCase()); return; }
       out.push(...r.out); if (r.rest.length) { unknown.push(cap(r.rest.join(' '))); out.push(cap(r.rest.join(' '))); }
     });
     const cc = String(countryCode || (hasCountry ? 'CN' : '')).toUpperCase();

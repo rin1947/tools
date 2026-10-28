@@ -36,9 +36,9 @@ window.TOOLS = [
   },
   {
     id: 'customs-entry',
-    name: 'Phiếu khai nhanh ECUS',
+    name: 'Danh sách hàng khai HQ',
     icon: '🛃',
-    description: 'Thả hợp đồng, Bill, Invoice, PL, C/O → kiểm tra chéo, HS từ Landed Cost, tem phụ tiếng Việt, copy sang ECUS, xuất DS hàng .xls cho ECUS5.',
+    description: 'Nạp form Excel (AI điền từ Invoice) → mô tả tiếng Việt, HS từ Landed Cost, tem phụ, linh kiện → xuất DS hàng .xls cho ECUS5.',
     path: 'tools/customs-entry/index.html',
     status: 'beta',
     category: 'Nhập khẩu',

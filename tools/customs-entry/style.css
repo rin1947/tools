@@ -153,3 +153,4 @@ input.empty { border-color: var(--pink-400); background: var(--surface-2); }
 .fee-rows b { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .fee-sum { border-top: 1px dashed var(--border); padding-top: 4px; }
 .slot-warn { font-size: 12px; font-weight: 800; color: var(--danger); }
+.hs-panel[hidden] { display: none; }
