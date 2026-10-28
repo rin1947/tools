@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Phiếu khai nhanh ECUS</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛃</text></svg>">
-  <link rel="stylesheet" href="../../assets/theme.css?v=20261027b">
-  <link rel="stylesheet" href="style.css?v=20261027b">
+  <link rel="stylesheet" href="../../assets/theme.css?v=20261028a">
+  <link rel="stylesheet" href="style.css?v=20261028a">
 </head>
 <body>
   <main class="page">
@@ -24,7 +24,7 @@
       <div class="toolbar no-print">
         <button class="btn btn-pink btn-sm" id="btnNew">✨ Lô mới</button>
         <label class="btn btn-primary btn-sm file-btn">📄 Nạp chứng từ
-          <input type="file" id="fileDocs" accept=".pdf,.docx,.doc,image/*" multiple hidden>
+          <input type="file" id="fileDocs" accept=".pdf,.docx,.doc,.xml,image/*" multiple hidden>
         </label>
         <label class="btn btn-ghost btn-sm file-btn">📜 Nạp hợp đồng (PDF / Word)
           <input type="file" id="fileContract" accept=".pdf,.docx,.doc,image/*" hidden>
@@ -90,7 +90,7 @@
           <span class="dz-icon">📥</span>
           <div>
             <b>Kéo thả file vào đây</b> hoặc <label class="link file-btn" for="fileDocs">chọn file</label><br>
-            <span class="help-text">Hợp đồng, Bill, Commercial Invoice, Packing List, C/O — PDF, bản scan / ảnh chụp, Word (.docx). Tool tự nhận loại chứng từ. Bản scan đọc bằng nhận dạng chữ ngay trên máy (lần đầu tải bộ đọc chữ ~3 MB), file không gửi đi đâu.</span>
+            <span class="help-text">Hợp đồng, Bill, Commercial Invoice, Packing List, C/O, <b>Arrival Notice, hoá đơn cước, hoá đơn bảo hiểm</b> (hoá đơn điện tử PDF / XML hoặc debit note) — PDF, bản scan / ảnh chụp, Word (.docx). Nạp nhiều file cùng lúc được. Tool tự nhận loại chứng từ. Bản scan đọc bằng nhận dạng chữ ngay trên máy (lần đầu tải bộ đọc chữ ~3 MB), file không gửi đi đâu.</span>
           </div>
         </div>
         <div class="docs" id="docs"></div>
@@ -135,11 +135,12 @@
           <div class="field"><label>Số kiện (C/O)</label><input data-k="coPkgs" data-num inputmode="decimal"></div>
           <div class="field"><label>G.W kg (C/O)</label><input data-k="coGw" data-num inputmode="decimal"></div>
         </div>
-        <h3 class="sub-title">Bổ sung ✍️</h3>
+        <h3 class="sub-title">Arrival Notice, cước, bảo hiểm</h3>
         <div class="form-grid">
-          <div class="field"><label>Ngày hàng đến ✍️</label><input type="date" data-k="arrival"></div>
-          <div class="field"><label>Phí vận chuyển (VND) ✍️</label><input data-k="freight" data-num inputmode="decimal"></div>
-          <div class="field"><label>Phí bảo hiểm (VND) ✍️</label><input data-k="ins" data-num inputmode="decimal"></div>
+          <div class="field"><label>Ngày hàng đến <span class="hint" tabindex="0" data-tip="Tự lấy từ Arrival Notice (ETA).">?</span></label><input type="date" data-k="arrival"></div>
+          <div class="field"><label>Mã địa điểm lưu kho <span class="hint" tabindex="0" data-tip="Tự lấy từ Arrival Notice (vd 02CIS02). Để trống thì tool dùng mã theo cảng dỡ.">?</span></label><input data-k="storeCode"></div>
+          <div class="field"><label>Phí vận chuyển <span class="hint" tabindex="0" data-tip="Tự lấy từ hoá đơn cước: chỉ cước quốc tế, không cộng THC, D/O, CIC…">?</span></label><div class="money"><input data-k="freight" data-num inputmode="decimal"><select data-k="freightCur"><option>VND</option><option>USD</option></select></div></div>
+          <div class="field"><label>Phí bảo hiểm <span class="hint" tabindex="0" data-tip="Tự lấy từ hoá đơn bảo hiểm (tiền trước thuế).">?</span></label><div class="money"><input data-k="ins" data-num inputmode="decimal"><select data-k="insCur"><option>VND</option><option>USD</option></select></div></div>
           <div class="field"><label>Tỷ giá tính thuế ✍️ <span class="hint" tabindex="0" data-tip="Tỷ giá hải quan USD/VND áp dụng cho ngày đăng ký tờ khai.">?</span></label><input data-k="rate" data-num inputmode="decimal"></div>
           <div class="field"><label>Số giấy phép RK01 ✍️ <span class="hint" tabindex="0" data-tip="Số hồ sơ đăng ký kiểm tra chất lượng trên cổng một cửa, nếu hàng phải KTCL.">?</span></label><input data-k="permit"></div>
         </div>
@@ -167,12 +168,16 @@
       <section class="card">
         <h2 class="section-title"><span class="num">4</span> Tem phụ &amp; mô tả hàng</h2>
         <p class="help-text no-print">Tool tự dịch tên hàng, tên + địa chỉ nhà sản xuất sang tiếng Việt và điền sẵn từ Landed Cost, hợp đồng, Packing List. Ô ghi <span class="auto-tag">tự động</span> là chưa sửa tay. Tên riêng (tên hiệu, tên đường) không dịch được thì sửa tay một lần, tool nhớ cho các lô sau.</p>
-        <div class="toolbar no-print" style="margin-bottom:12px">
-          <label class="btn btn-pink btn-sm file-btn">📥 Nạp tem có sẵn (PDF / .ai / ảnh)
-            <input type="file" id="fileTem" accept=".pdf,.ai,image/*" multiple hidden>
-          </label>
-          <span class="help-text">Có tem cũ thì nạp vào: tool đọc tên hàng, thông số, nhà sản xuất, nhà nhập khẩu và điền sẵn (không đọc mã vạch). Tool tìm model theo dòng "Model" trên tem.</span>
+        <div class="dropzone no-print" id="temDrop">
+          <span class="dz-icon">🏷️</span>
+          <div>
+            <label class="btn btn-pink btn-sm file-btn">📥 Nạp tem có sẵn — chọn nhiều file cùng lúc
+              <input type="file" id="fileTem" accept=".pdf,.ai,image/*" multiple hidden>
+            </label>
+            <span class="help-text">hoặc kéo thả tất cả file tem vào đây (PDF, .ai, ảnh chụp; 1 file nhiều trang / nhiều tem cũng được). Tool đọc tên hàng, thông số, nhà sản xuất, nhà nhập khẩu và tự khớp model theo dòng "Model" trên tem — không đọc mã vạch. Linh kiện không có tem: đánh dấu "Linh kiện" ở mục 3, tool tự dịch mô tả.</span>
+          </div>
         </div>
+        <div id="temLog"></div>
         <div id="temList" class="tem-list"></div>
       </section>
 
@@ -203,9 +208,9 @@
     </div>
   </main>
 
-  <script src="../../assets/common.js?v=20261027b"></script>
-  <script src="parsers.js?v=20261027b"></script>
-  <script src="translate.js?v=20261027b"></script>
-  <script src="app.js?v=20261027b"></script>
+  <script src="../../assets/common.js?v=20261028a"></script>
+  <script src="parsers.js?v=20261028a"></script>
+  <script src="translate.js?v=20261028a"></script>
+  <script src="app.js?v=20261028a"></script>
 </body>
 </html>

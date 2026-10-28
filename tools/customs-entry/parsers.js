@@ -66,6 +66,9 @@
 
   function classify(t) {
     const u = String(t).toUpperCase();
+    if (/ARRIVAL\s*NOTICE|NOTICE\s*OF\s*ARRIVAL|GIẤY\s*BÁO\s*HÀNG\s*ĐẾN|THÔNG\s*BÁO\s*HÀNG\s*ĐẾN|GIẤY BÁO NHẬN HÀNG/.test(u)) return 'an';
+    if (/HÓA\s*ĐƠN\s*GIÁ\s*TRỊ\s*GIA\s*TĂNG|HOÁ\s*ĐƠN\s*GIÁ\s*TRỊ\s*GIA\s*TĂNG|HÓA\s*ĐƠN\s*ĐIỆN\s*TỬ|HOÁ\s*ĐƠN\s*ĐIỆN\s*TỬ|MÃ CỦA CƠ QUAN THUẾ|HÓA ĐƠN BÁN HÀNG/.test(u)) return 'vat';
+    if (/DEBIT\s*NOTE|FREIGHT\s*INVOICE|INSURANCE\s*(POLICY|CERTIFICATE)|ĐƠN BẢO HIỂM|GIẤY CHỨNG NHẬN BẢO HIỂM/.test(u)) return 'fee';
     if (/CONTRACT|HỢP ĐỒNG|HOP DONG/.test(u) && /SELLER|BÊN BÁN/.test(u) && /BUYER|BÊN MUA/.test(u) && /ARTICLE|ĐIỀU\s*\d|TERMS/.test(u)) return 'hd';
     if (/CERTIFICATE OF ORIGIN|FORM\s+E\b|ACFTA/.test(u)) return 'co';
     if (/PACKING\s*LIST/.test(u)) return 'pl';
@@ -120,7 +123,10 @@
     const lines = [];
     u.split('\n').forEach((s) => {
       const r = s.match(/^\s*([A-Z0-9][A-Z0-9\-\/.]{2,})\s+(.+?)\s+(\d[\d.,]*)\s*(PCS|PC|SETS|SET|UNITS|UNIT)\s+(?:USD|US\$)?\s*([\d.,]+)\s+(?:USD|US\$)?\s*([\d.,]+)/);
-      if (r && r[1] !== 'TOTAL') lines.push({ code: r[1], name: titleCase(r[2]), qty: num(r[3]), unit: r[4], price: num(r[5]), amount: num(r[6]) });
+      if (!r || r[1] === 'TOTAL') return;
+      // "mã" không có số (vd MAIN BODY …) → dòng không có mã hàng, cả cụm là mô tả (thường là linh kiện)
+      const coded = /\d/.test(r[1]) || /-/.test(r[1]);
+      lines.push({ code: coded ? r[1] : '', name: titleCase(coded ? r[2] : r[1] + ' ' + r[2]), qty: num(r[3]), unit: r[4], price: num(r[5]), amount: num(r[6]) });
     });
     if (lines.length) o.lines = lines;
     if ((m = u.match(/TOTAL[^\n]*?(?:USD|US\$)\s*([\d.,]+)\s*$/m))) o.invTotal = num(m[1]);
@@ -266,7 +272,53 @@
     return o;
   }
 
-  const API = { num, findDates, linesFromPdfPages, classify, bill, ci, pl, co, contract, tem, fixOcrDigits, POL, POD };
+  /* ---------- ARRIVAL NOTICE (giấy báo hàng đến của hãng tàu / forwarder) ----------
+     → { anBl, anVessel, arrival (ETA), anPod, storeCode (mã địa điểm lưu kho dạng 02CIS02), anFreightUsd (cước O/F nếu AN có ghi) } */
+  function an(t) {
+    const u = String(t).toUpperCase(); const o = {}; let m;
+    if ((m = u.match(/(?:B\/L|BILL OF LADING|HBL|MBL|SỐ VẬN ĐƠN)\s*(?:NO\.?|NUMBER|SỐ)?\s*[:.]?\s*([A-Z]{2,6}[A-Z0-9]*\d{4,}[A-Z0-9]*)/))) o.anBl = m[1];
+    if ((m = u.match(/(?:VESSEL|TÊN TÀU|TÀU)\s*(?:\/\s*VOY(?:AGE)?\.?)?\s*(?:NAME)?\s*[:.]\s*([A-Z][A-Z0-9 .\-\/]{3,40})/))) o.anVessel = m[1].replace(/\s+(ETA|ETD|VOY|POL|POD|PORT)\b.*$/, '').replace(/\s*\/\s*/g, ' ').trim();
+    const em = u.match(/(?:\bETA\b|ARRIVAL\s*DATE|DATE\s*OF\s*ARRIVAL|NGÀY\s*(?:TÀU\s*|HÀNG\s*)?ĐẾN|NGÀY\s*DỰ\s*KIẾN\s*ĐẾN)\s*[:.]?\s*(.{0,40})/);
+    if (em) { const d = findDates(em[1]); if (d.length) o.arrival = d[0].v; }
+    for (const [re] of POD) { if (re.test(u)) { o.anPod = u.match(re)[0]; break; } }
+    if ((m = u.match(/\b(\d{2}[A-Z]{2,4}\d{2})\b/))) o.storeCode = m[1];
+    if ((m = u.match(/(?:OCEAN\s*FREIGHT|SEA\s*FREIGHT|O\/F|CƯỚC\s*BIỂN)[^\n]{0,40}?(?:USD|US\$)\s*([\d.,]+)/)) || (m = u.match(/(?:OCEAN\s*FREIGHT|SEA\s*FREIGHT|O\/F)[^\n]{0,40}?([\d.,]+)\s*(?:USD|US\$)/))) o.anFreightUsd = num(m[1]);
+    return o;
+  }
+
+  /* ---------- Phân loại phí trên hoá đơn: cước quốc tế / bảo hiểm / phí khác ----------
+     Trị giá hải quan (FOB) chỉ cộng cước vận chuyển QUỐC TẾ tới cửa khẩu nhập + bảo hiểm — KHÔNG cộng phí local (THC, D/O, CIC, vệ sinh, nâng hạ…). */
+  const LOCAL_RE = /\bthc\b|terminal|d\/o|delivery order|handling|\bcic\b|imbalance|cleaning|vệ sinh|nâng|hạ cont|lift|\bseal\b|\bebs\b|b\/l fee|chứng từ|documentation|doc fee|manifest|cfs|lưu kho|lưu cont|storage|demurrage|detention|trucking|vận chuyển nội địa|nội địa|telex|amendment|admin|phí dịch vụ|service/i;
+  function feeKind(desc) {
+    const d = String(desc || '');
+    if (/bảo\s*hiểm|insurance|premium|\bphí bh\b/i.test(d)) return 'ins';
+    if (LOCAL_RE.test(d)) return 'local';
+    if (/cước|freight|\bo\/f\b|ocean|sea\s*freight|vận\s*(chuyển|tải)\s*(hàng\s*hóa\s*)?(quốc\s*tế|bằng\s*đường\s*biển)/i.test(d)) return 'freight';
+    return 'other';
+  }
+  /* Debit note / hoá đơn tiếng Anh không theo mẫu VN: tìm dòng cước, bảo hiểm và số tiền (USD hoặc VND) */
+  function feeLines(text) {
+    const out = [];
+    String(text).split('\n').forEach((line) => {
+      const k = feeKind(line); if (k !== 'freight' && k !== 'ins') return;
+      const usd = line.match(/(?:USD|US\$)\s*([\d.,]+)|([\d.,]+)\s*(?:USD|US\$)/i);
+      if (usd) out.push({ desc: line.trim(), kind: k, usd: num(usd[1] || usd[2]) });
+      else { const v = [...line.matchAll(/\d[\d.,]*\d|\d/g)].map((x) => parseFloat(x[0].replace(/[.,](?=\d{3}(\D|$))/g, '').replace(',', '.'))).filter((n) => n > 0);
+        if (v.length) out.push({ desc: line.trim(), kind: k, vnd: v[v.length - 1] }); }      // VND: dấu . , là phân cách nghìn
+    });
+    return out;
+  }
+
+  /* Nhiều tem trong 1 file (nhiều trang / nhiều tem trên 1 trang) → tách theo từng dòng "Model" */
+  function tems(text) {
+    const lines = String(text).split('\n');
+    const idx = lines.map((l, i) => (/^\s*model\b/.test(fold(l)) ? i : -1)).filter((i) => i >= 0);
+    if (idx.length <= 1) { const one = tem(text); return Object.keys(one).length ? [one] : []; }
+    const starts = idx.map((i) => { let s0 = i; for (let k = i - 1; k >= Math.max(0, i - 3); k--) { if (lines[k].trim()) { s0 = k; break; } } return s0; });
+    return starts.map((st, n) => tem(lines.slice(st, n + 1 < starts.length ? starts[n + 1] : undefined).join('\n'))).filter((x) => x.model || x.nameVi);
+  }
+
+  const API = { num, findDates, linesFromPdfPages, classify, bill, ci, pl, co, contract, tem, tems, an, feeKind, feeLines, fixOcrDigits, POL, POD };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else root.CustomsParsers = API;
 })(typeof window !== 'undefined' ? window : globalThis);

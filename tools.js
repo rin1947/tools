@@ -42,6 +42,6 @@ window.TOOLS = [
     path: 'tools/customs-entry/index.html',
     status: 'beta',
     category: 'Nhập khẩu',
-    updated: '2026-10-27',
+    updated: '2026-10-28',
   },
 ];

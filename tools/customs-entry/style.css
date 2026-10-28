@@ -12,7 +12,7 @@
 }
 .dropzone.over { background: var(--pink-100); border-color: var(--pink-400); }
 .dz-icon { font-size: 34px; }
-.docs { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.docs { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .doc { border: 2px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px; min-width: 0; }
 .doc b { display: block; font-size: 13px; }
 .doc span { font-size: 12px; color: var(--text-mute); overflow-wrap: anywhere; }
@@ -119,3 +119,19 @@ input.empty { border-color: var(--pink-400); background: var(--surface-2); }
 .chip.copied { background: var(--accent-bg); border-color: var(--accent); }
 .chip.miss { font-family: var(--font); color: var(--accent-2); border-color: var(--pink-400); cursor: default; }
 @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap: 4px; } }
+
+/* ---------- Linh kiện, tiền tệ, nhật ký nạp tem ---------- */
+.part-ctl { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin-top: 4px; font-size: 12px; font-weight: 700; color: var(--text-soft); white-space: normal; }
+.part-ctl label { display: inline-flex; align-items: center; gap: 4px; }
+.part-ctl input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
+.part-ctl select { width: auto; padding: 2px 6px; font-size: 12px; }
+.hs-src.sug { color: var(--accent-2); }
+.money { display: flex; gap: 6px; }
+.money select { width: 78px; flex: none; }
+.tem-log { display: grid; gap: 4px; font-size: 13px; margin-bottom: 10px; }
+.tem-log .ok { background: var(--accent-bg); border-radius: var(--radius-sm); padding: 5px 10px; }
+.tem-log .bad { background: var(--surface-2); border-radius: var(--radius-sm); padding: 5px 10px; }
+.tem-pend { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border: 2px dashed var(--pink-400); border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 8px; font-size: 13px; }
+.tem-pend span { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+.tem-pend select { width: auto; }
+#temDrop .file-btn { margin-bottom: 4px; }

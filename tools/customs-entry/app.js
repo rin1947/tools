@@ -105,6 +105,7 @@
       const ci = {}; d.cols.forEach((c, i) => { ci[c] = i; });
       DB = { ci, map: new Map(d.rows.map((r) => [r[0], r])), rows: d.rows.filter((r) => /^\d{8}$/.test(r[0])) };
       $('#tariffInfo').textContent = '📚 Thuế suất theo ' + DBsrc + '.';
+      fillPartHS(); saveSet(); saveLot();
     } catch (e) {
       $('#tariffInfo').textContent = '⚠️ Không đọc được biểu thuế của Landed Cost — nhập thuế suất tay.';
     }
@@ -204,7 +205,15 @@
   }
   const lineHS = (l) => (l.code ? (modelOf(l.code) || {}).hs || '' : l.hs || '');
   const lineUnit = (l) => (l.code ? (modelOf(l.code) || {}).unit || 'PCE' : l.unit || 'PCE');
-  const lineDesc = (l) => (l.code ? descOf(l.code) : l.desc || '');
+  /* "chủ" của dòng: dòng có mã → model trong thư viện; dòng không mã → chính dòng đó */
+  const holder = (l) => (l.code ? ensureModel(l.code) : l);
+  const peek = (l) => (l.code ? modelOf(l.code) || {} : l);
+  const isPart = (l) => !!peek(l).part;
+  const enOf = (h) => h.en || h.invName || '';
+  /* Mô tả tự động: linh kiện → dịch từ tên tiếng Anh + máy chính; hàng có tem → tạo từ tem */
+  const autoDesc = (l) => { const h = peek(l); return h.part ? genPartDesc(h) : l.code ? genDesc(l.code) : (l.desc || ''); };
+  const lineDesc = (l) => { const h = peek(l); if (h.part) return h.descManual && h.desc ? h.desc : genPartDesc(h); return l.code ? descOf(l.code) : l.desc || ''; };
+  const mainCodes = () => [...new Set(L.lines.filter((l) => l.code && !isPart(l)).map((l) => l.code))];
   const lineAmt = (l) => Math.round((parseNum(l.qty) * parseNum(l.price)) * 100) / 100;
 
   const TEM_FIELDS = [
@@ -258,6 +267,62 @@
   }
   const descOf = (code) => { const m = modelOf(code); return m && m.descManual && m.desc ? m.desc : genDesc(code); };
 
+  /* ======================= LINH KIỆN (không có tem phụ) =======================
+     Mô tả: "Linh kiện <tên máy chính> <nhãn hiệu> <model máy chính>: <tên linh kiện tiếng Việt> [bằng <vật liệu>]; hàng mới F.O.C; hàng mới 100%"
+     Mã HS gợi ý: mặt hàng có nhóm riêng (dây nguồn 85.44, phích cắm 85.36, ốc vít 73.18, sách HD 49.01, thùng carton 48.19, adapter 85.04)
+     → còn lại là "bộ phận" của máy chính: 4 số đầu mã máy chính + "90" (vd quạt 8414.51 → 8414.90.29; máy sấy tóc 8516.31 → 8516.90.90).
+     Luôn là GỢI Ý — người dùng xác nhận theo đặc tính thực tế (Chú giải 2 Phần XVI). */
+  function genPartDesc(h) {
+    const tr = V.part(enOf(h));
+    let pname = '';
+    if (h.parent) { const t = temOf(h.parent); pname = `${t.nameVi ? sentence(t.nameVi) : ''}${t.brand ? ' ' + t.brand : ''} ${h.parent}`.replace(/\s+/g, ' ').trim(); }
+    else pname = tr.parentVi || '';
+    const foc = h.foc !== undefined ? h.foc : tr.foc;
+    return [`Linh kiện${pname ? ' ' + pname : ''}: ${tr.vi || enOf(h)}`, foc ? 'hàng mới F.O.C' : '', 'hàng mới 100%'].filter(Boolean).join('; ');
+  }
+  const PART_PARENT = [['8414', '84149029'], ['8509', '85099090'], ['851633', '85169029'], ['851650', '85169029'], ['851660', '85169029'], ['851671', '85169029'],
+    ['85167910', '85169029'], ['8516', '85169090'], ['8479', '84799090'], ['8508', '85087090'], ['8415', '84159019'], ['8418', '84189990'], ['8450', '84509020'], ['8451', '84519010']];
+  const PART_SPEC = [[/power\s*cord|power\s*cable|\bcord\b/i, '85444294', 'dây nguồn có vỏ nhựa'], [/\bplug\b/i, '85366992', 'phích cắm'], [/\bscrews?\b/i, '73181590', 'ốc vít'],
+    [/manual|warranty\s*card|instruction/i, '49019990', 'sách hướng dẫn / phiếu bảo hành'], [/carton|colou?r\s*box|gift\s*box/i, '48191000', 'thùng / hộp giấy'], [/adapter|charger/i, '85044090', 'bộ đổi nguồn']];
+  const PART_HINT = [[/\bmotor\b/i, '8501', 'Động cơ điện có nhóm riêng 85.01 (theo loại, công suất)'], [/remote/i, '854370', 'Điều khiển từ xa: xem 8543.70'],
+    [/switch/i, '853650', 'Công tắc: nhóm 85.36'], [/battery/i, '8507', 'Pin, ắc quy: nhóm 85.07']];
+  function parentHS(h) {
+    if (h.parent) {
+      const ph = lineHS({ code: h.parent }); if (ph) return ph;
+      const pm = modelOf(h.parent) || {}; const k0 = kwSuggest([temOf(h.parent).nameVi, pm.invName].filter(Boolean).join(' '));
+      if (k0.length) return k0[0].codes[0];
+    }
+    const tr = V.part(enOf(h)); const k = kwSuggest(tr.parentVi || tr.parentHint || '');
+    return k.length ? k[0].codes[0] : '';
+  }
+  function partSuggest(h) {
+    const en = enOf(h); const out = [];
+    const spec = PART_SPEC.find(([re]) => re.test(en));
+    if (spec && DB && DB.map.has(spec[1])) out.push({ c: spec[1], label: 'Mặt hàng có nhóm riêng: ' + spec[2] });
+    const ph = parentHS(h);
+    if (ph && DB) {
+      const heading = ph.slice(0, 4);
+      const rows = DB.rows.filter((r) => r[0].startsWith(heading + '90')).map((r) => r[0]);
+      let pc = (PART_PARENT.find(([pre]) => ph.startsWith(pre)) || [])[1];
+      if (!pc || !DB.map.has(pc)) pc = rows.filter((c) => /loại khác/i.test(shortDesc(DB.map.get(c)))).pop() || rows[rows.length - 1];
+      if (pc) out.push({ c: pc, label: `Bộ phận của máy chính (${fmtHS(ph)})` });
+      rows.filter((c) => c !== pc).slice(0, 6).forEach((c) => out.push({ c, label: `Bộ phận nhóm ${heading.slice(0, 2)}.${heading.slice(2)}` }));
+    }
+    const hint = PART_HINT.find(([re]) => re.test(en));
+    if (hint && DB) DB.rows.filter((r) => r[0].startsWith(hint[1])).slice(0, 6).forEach((r) => out.push({ c: r[0], label: hint[2] }));
+    return { list: out, best: out.length ? out[0].c : '', hint: hint ? hint[2] : '' };
+  }
+  /* Linh kiện chưa có mã HS → điền mã gợi ý (đánh dấu 'sug' để nhắc kiểm tra) */
+  function fillPartHS() {
+    if (!DB) return;
+    L.lines.forEach((l) => { const h = peek(l); if (h.part && (!h.hs || h.hsSrc === 'sug')) { const b = partSuggest(h).best; if (b) { const hh = holder(l); hh.hs = b; hh.hsSrc = 'sug'; } } });
+  }
+  /* Máy chính của linh kiện: mã model nằm trong tên / mã linh kiện, hoặc lô chỉ có 1 máy chính */
+  function guessParent(code, en, mains) {
+    const k = normKey(code + ' ' + en);
+    return mains.find((c) => k.includes(normKey(c))) || (mains.length === 1 ? mains[0] : '');
+  }
+
   /* Mã vạch EAN-13 → SVG */
   const EAN_L = ['0001101', '0011001', '0010011', '0111101', '0100011', '0110001', '0101111', '0111011', '0110111', '0001011'];
   const EAN_G = ['0100111', '0110011', '0011011', '0100001', '0011101', '0111001', '0000101', '0010001', '0001001', '0010111'];
@@ -294,13 +359,13 @@
     return window.pdfjsLib;
   }
   async function openPdf(file) { const pdfjs = await loadPdfJs(); return pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise; }
-  async function pdfText(doc) {
+  async function pdfPages(doc) {
     const pages = [];
     for (let i = 1; i <= Math.min(doc.numPages, 6); i++) {
       const tc = await (await doc.getPage(i)).getTextContent();
-      pages.push(tc.items.map((t) => ({ s: t.str, x: t.transform[4], y: t.transform[5] })));
+      pages.push(tc.items.map((t) => ({ s: t.str, x: t.transform[4], y: t.transform[5], w: t.width, h: Math.hypot(t.transform[2], t.transform[3]) || t.height })));
     }
-    return P.linesFromPdfPages(pages);
+    return pages;
   }
   /* OCR (tesseract.js chạy trên máy; lần đầu tải bộ đọc chữ tiếng Anh ~3 MB) — cùng cấu hình tool Phiếu nhập kho */
   const TESS = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/';
@@ -349,19 +414,20 @@
   }
   /* Đọc chữ của 1 file bất kỳ → { text, ocr }. lang: 'eng' cho chứng từ tiếng Anh, 'vie' cho tem phụ tiếng Việt */
   async function fileText(f, lang = 'eng') {
+    if (/\.xml$/i.test(f.name)) { const xml = await f.text(); return { text: /<HDon|<TTChung|<NBan/i.test(xml) ? 'HÓA ĐƠN ĐIỆN TỬ\n' + xml : xml, xml }; }
     if (/\.docx$/i.test(f.name)) return { text: await docxText(f) };
     if (/\.doc$/i.test(f.name)) throw new Error('file Word đời cũ (.doc) — mở bằng Word, lưu lại thành .docx hoặc PDF rồi nạp lại');
     if (/\.(png|jpe?g|webp|bmp)$/i.test(f.name) || /^image\//.test(f.type)) return { text: await ocrCanvases([await imageCanvas(f)], f.name, lang), ocr: true };
     let doc;
     try { doc = await openPdf(f); }
     catch (e) { throw new Error(/\.ai$/i.test(f.name) ? 'file .ai này không lưu kèm bản PDF — trong Illustrator chọn Save As PDF (hoặc xuất ảnh PNG) rồi nạp lại' : 'không mở được file PDF'); }
-    const t = await pdfText(doc);
-    if (t.replace(/\s/g, '').length >= 40) return { text: t };
-    return { text: await ocrCanvases(await pdfCanvases(doc, lang === 'vie' ? 1 : 4), f.name, lang), ocr: true };
+    const pages = await pdfPages(doc); const t = P.linesFromPdfPages(pages);
+    if (t.replace(/\s/g, '').length >= 40) return { text: t, pages };
+    return { text: await ocrCanvases(await pdfCanvases(doc, lang === 'vie' ? 6 : 4), f.name, lang), ocr: true };
   }
 
   /* ======================= NẠP CHỨNG TỪ ======================= */
-  const DOCNAME = { hd: 'Hợp đồng', bill: 'Vận đơn (Bill)', ci: 'Commercial Invoice', pl: 'Packing List', co: 'C/O' };
+  const DOCNAME = { hd: 'Hợp đồng', bill: 'Vận đơn (Bill)', ci: 'Commercial Invoice', pl: 'Packing List', co: 'C/O', an: 'Arrival Notice', fr: 'Hoá đơn cước', bh: 'Hoá đơn bảo hiểm' };
   let busy = false;
   async function handleFiles(files) {
     if (busy) { GauBep.toast('Đang đọc file trước, chờ chút…'); return; }
@@ -369,14 +435,30 @@
     try {
       for (const f of files) {
         try {
-          const { text, ocr } = await fileText(f);
+          const { text, ocr, pages, xml } = await fileText(f);
           const k = P.classify(text);
           if (!k) { GauBep.toast(`${f.name}: chưa nhận ra loại chứng từ`); continue; }
           if (L.sample) L = newLot();
           if (k === 'hd') { if (applyContract(P.contract(text), f.name, ocr)) done.push('Hợp đồng'); continue; }
+          if (k === 'an') { applyAN(P.an(text), f.name + (ocr ? ' (đọc bản scan)' : '')); done.push('Arrival Notice'); continue; }
+          if (k === 'vat' || k === 'fee') { const r = await applyFee(k, text, pages, xml, f.name); if (r) done.push(r); continue; }
           const res = P[k](text);
           if (k === 'ci') {
-            if (res.lines) L.lines = res.lines.map((x) => { ensureModel(x.code, x.name); return { id: uid(), code: x.code, qty: x.qty, price: x.price, invAmount: x.amount, unit: UNIT_MAP[x.unit] || 'PCE' }; });
+            if (res.lines) {
+              const partOf = (x) => V.isPartName(x.name) && !lcFind(x.code);
+              const mains = res.lines.filter((x) => x.code && !partOf(x)).map((x) => x.code);
+              L.lines = res.lines.map((x) => {
+                const base = { id: uid(), code: x.code, qty: x.qty, price: x.price, invAmount: x.amount, unit: UNIT_MAP[x.unit] || 'PCE' };
+                const isP = partOf(x); const tr = isP ? V.part(x.name) : null;
+                if (x.code) {
+                  const fresh = !modelOf(x.code); const m = ensureModel(x.code, x.name);
+                  if (fresh && isP) Object.assign(m, { part: true, foc: tr.foc, parent: guessParent(x.code, x.name, mains) });
+                  return base;
+                }
+                return Object.assign(base, { en: x.name, desc: isP ? '' : x.name, part: isP, foc: isP ? tr.foc : false, parent: isP ? guessParent('', x.name, mains) : '', hs: '' });
+              });
+              fillPartHS();
+            }
             delete res.lines;
             const hit = S.sups.find((s) => s.key && normKey(text).includes(normKey(s.key)));
             if (hit) L.supId = hit.id;
@@ -389,6 +471,38 @@
     L.lines.forEach((l) => { const m = modelOf(l.code); if (m && !m.supId) m.supId = L.supId; });
     saveSet(); saveLot(); renderAll();
     if (done.length) GauBep.toast('Đã đọc: ' + done.join(', ') + ' 🐼');
+  }
+  /* Arrival Notice → ngày hàng đến, mã địa điểm lưu kho, cước O/F (nếu có) để đối chiếu */
+  function applyAN(a, fname) {
+    if (a.arrival) L.arrival = a.arrival;
+    if (a.storeCode) L.storeCode = a.storeCode;
+    if (!L.pod && a.anPod) L.pod = 'HO CHI MINH(' + a.anPod + ')';
+    Object.assign(L, { anBl: a.anBl || '', anVessel: a.anVessel || '', anFreightUsd: a.anFreightUsd || '' });
+    L.docs.an = fname;
+  }
+  /* Hoá đơn cước / bảo hiểm (hoá đơn điện tử VN dạng PDF / XML, hoặc debit note tiếng Anh)
+     → chỉ cộng dòng CƯỚC QUỐC TẾ và PHÍ BẢO HIỂM (tiền trước thuế); phí local (THC, D/O, CIC…) bỏ qua */
+  async function applyFee(k, text, pages, xml, fname) {
+    let rows = [];
+    if (k === 'vat') {
+      if (!window.InvoiceParser) await loadScript('../cost-payment/invoice-parser.js?v=20261028');
+      const inv = xml ? window.InvoiceParser.fromXml(xml) : window.InvoiceParser.fromPdfPages(pages || []);
+      rows = (inv.lines || []).map((x) => ({ desc: x.desc, kind: P.feeKind(x.desc), vnd: x.pre }));
+    } else rows = P.feeLines(text);
+    const fr = rows.filter((r) => r.kind === 'freight'); const ins = rows.filter((r) => r.kind === 'ins');
+    const local = rows.filter((r) => r.kind === 'local');
+    if (!fr.length && !ins.length) { GauBep.toast(`${fname}: không thấy dòng cước quốc tế / phí bảo hiểm trên hoá đơn`); return ''; }
+    const setFee = (kind, list) => {
+      const usd = list.reduce((a, r) => a + (r.usd || 0), 0); const vnd = list.reduce((a, r) => a + (r.vnd || 0), 0);
+      const cur = usd && !vnd ? 'USD' : 'VND';
+      L[kind] = cur === 'USD' ? Math.round(usd * 100) / 100 : Math.round(vnd);
+      L[kind + 'Cur'] = cur;
+      L[kind + 'Doc'] = { file: fname, lines: list.map((r) => ({ desc: r.desc, amt: r.usd || r.vnd, cur: r.usd ? 'USD' : 'VND' })), local: local.map((r) => r.desc) };
+    };
+    const got = [];
+    if (fr.length) { setFee('freight', fr); L.docs.fr = fname; got.push('Hoá đơn cước'); }
+    if (ins.length) { setFee('ins', ins); L.docs.bh = fname; got.push('Hoá đơn bảo hiểm'); }
+    return got.join(', ');
   }
   /* Hợp đồng → hồ sơ NCC (tìm NCC trùng tên / trùng số HĐ, không có thì tạo mới) */
   function applyContract(c, fname, ocr) {
@@ -420,19 +534,22 @@
   const dz = $('#dropzone');
   ['dragenter', 'dragover'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('over'); }));
   ['dragleave', 'drop'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('over'); }));
-  dz.addEventListener('drop', (e) => handleFiles([...e.dataTransfer.files].filter((f) => /\.(pdf|docx?|png|jpe?g|webp)$/i.test(f.name))));
+  dz.addEventListener('drop', (e) => handleFiles([...e.dataTransfer.files].filter((f) => /\.(pdf|docx?|xml|png|jpe?g|webp)$/i.test(f.name))));
 
   /* ======================= 1–2. CHỨNG TỪ & THÔNG TIN LÔ ======================= */
   function renderLot() {
     document.querySelectorAll('[data-k]').forEach((el) => {
       const v = L[el.dataset.k];
-      el.value = has(v) ? (el.hasAttribute('data-num') ? fmt(v) : v) : '';
+      el.value = has(v) ? (el.hasAttribute('data-num') ? fmt(v) : v) : (el.tagName === 'SELECT' ? el.options[0].value : '');
       el.classList.toggle('empty', el.value === '');
     });
     const s = sup();
     $('#docs').innerHTML = Object.keys(DOCNAME).map((k) => {
       let sub = L.docs[k] || 'Chưa nạp'; let ok = !!L.docs[k];
       if (k === 'hd' && s.contractNo) { ok = true; sub = `${s.contractNo} · ký ${dmy(s.contractDate) || '?'} · hết hạn ${dmy(s.contractEnd) || '?'}` + (L.docs.hd ? '' : ' (đã lưu ở NCC)'); }
+      if (k === 'fr' && L.docs.fr) sub = `${L.docs.fr} · cước ${fmt(L.freight, 2)} ${L.freightCur || 'VND'}`;
+      if (k === 'bh' && L.docs.bh) sub = `${L.docs.bh} · phí BH ${fmt(L.ins, 2)} ${L.insCur || 'VND'}`;
+      if (k === 'an' && L.docs.an) sub = `${L.docs.an}${L.arrival ? ' · đến ' + dmy(L.arrival) : ''}${L.storeCode ? ' · kho ' + L.storeCode : ''}`;
       return `<div class="doc${ok ? ' ok' : ''}"><b>${ok ? '✅' : '⬜'} ${DOCNAME[k]}</b><span>${esc(sub)}</span></div>`;
     }).join('');
     $('#supSel').innerHTML = S.sups.length ? S.sups.map((x) => `<option value="${x.id}"${x.id === L.supId ? ' selected' : ''}>${esc(x.name || '(chưa đặt tên)')}</option>`).join('')
@@ -454,17 +571,26 @@
     if (!L.lines.length) { tb.innerHTML = '<tr><td colspan="11" class="muted">Chưa có dòng hàng — nạp Invoice hoặc bấm ＋ Thêm dòng.</td></tr>'; renderHsPanel(); return; }
     tb.innerHTML = L.lines.map((l, i) => {
       const hs = lineHS(l); const R = rateOf(hs); const m = modelOf(l.code); const p = l.code ? lcFind(l.code) : null;
-      const src = !l.code ? '' : m && m.hsSrc === 'lc' && hs && hs === lcHS(p) ? '<div class="hs-src">🚢 từ Landed Cost</div>' : hs ? '<div class="hs-src">✍️ nhập tay</div>' : '';
+      const h = peek(l); const part = !!h.part;
+      const src = h.hsSrc === 'sug' && hs ? '<div class="hs-src sug">💡 gợi ý tự động — bấm ô để xem & xác nhận</div>'
+        : !l.code ? (hs ? '<div class="hs-src">✍️ nhập tay</div>' : '') : m && m.hsSrc === 'lc' && hs && hs === lcHS(p) ? '<div class="hs-src">🚢 từ Landed Cost</div>' : hs ? '<div class="hs-src">✍️ nhập tay</div>' : '';
       const note = !hs ? '<div class="hs-note bad">Chưa có mã HS — bấm vào ô để tra</div>'
         : R && R.bad ? '<div class="hs-note bad">Mã không có trong biểu thuế</div>'
           : R ? `<div class="hs-note">${esc(R.desc)}<br>MFN ${fmt(R.mfn)}% · ACFTA ${has(R.acfta) ? fmt(R.acfta) + '%' : '–'}</div>` : '';
       const nk = has(l.nkOv) ? l.nkOv : R && !R.bad ? R.nk : '';
       const vat = has(l.vatOv) ? l.vatOv : R && !R.bad ? R.vat : '';
-      const manual = m && m.descManual;
+      const manual = h.descManual && h.desc;
+      const mains = mainCodes().filter((c) => c !== l.code);
+      const partCtl = `<div class="part-ctl"><label><input type="checkbox" data-f="part"${part ? ' checked' : ''}> Linh kiện (không tem)</label>${part ? `
+          <label><input type="checkbox" data-f="foc"${(h.foc !== undefined ? h.foc : V.part(enOf(h)).foc) ? ' checked' : ''}> F.O.C</label>
+          <label>của máy <select data-f="parent"><option value="">— chọn —</option>${mains.map((c) => `<option${c === h.parent ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></label>` : ''}</div>`
+        + (part && enOf(h) ? `<div class="desc-src">Invoice: ${esc(enOf(h))}</div>` : '');
+      const descSrc = manual ? `✍️ mô tả sửa tay · <button type="button" class="link-btn" data-act="regen">↺ tạo lại ${part ? 'tự động' : 'từ tem'}</button>`
+        : part ? '🔧 tự dịch từ tên trên Invoice' : l.code ? '🏷️ tạo từ tem phụ (mục 4)' : '';
       return `<tr data-id="${l.id}"${hsLine === l.id ? ' class="sel"' : ''}>
         <td class="num">${i + 1}</td>
         <td class="code-cell"><input data-f="code" value="${esc(l.code)}" placeholder="(không mã)"></td>
-        <td><textarea data-f="desc" rows="3">${esc(lineDesc(l))}</textarea>${l.code ? `<div class="desc-src">${manual ? '✍️ mô tả sửa tay · <button type="button" class="link-btn" data-act="regen">↺ tạo lại từ tem</button>' : '🏷️ tạo từ tem phụ (mục 4)'}</div>` : ''}</td>
+        <td><textarea data-f="desc" rows="3">${esc(lineDesc(l))}</textarea>${descSrc ? `<div class="desc-src">${descSrc}</div>` : ''}${partCtl}</td>
         <td class="hs-cell"><input data-f="hs" value="${esc(fmtHS(hs))}" placeholder="gõ mã / từ khoá">${src}${note}</td>
         <td><input class="in-num" data-f="qty" value="${fmt(l.qty)}" inputmode="decimal" style="width:90px"></td>
         <td><input data-f="unit" value="${esc(lineUnit(l))}" style="width:64px"></td>
@@ -477,7 +603,7 @@
     renderHsPanel();
   }
   function setLineHS(l, hs, src) {
-    if (l.code) { const m = ensureModel(l.code); m.hs = hs; m.hsSrc = src || ''; saveSet(); } else l.hs = hs;
+    if (l.code) { const m = ensureModel(l.code); m.hs = hs; m.hsSrc = src || ''; saveSet(); } else { l.hs = hs; l.hsSrc = src || ''; }
   }
   $('#lineBody').addEventListener('change', (e) => {
     const el = e.target; const tr = el.closest('tr'); if (!tr || !el.dataset.f) return;
@@ -496,8 +622,16 @@
       if (l.code) { const m = ensureModel(l.code); if (!m.hs && old.hs) m.hs = old.hs; }
       else Object.assign(l, old);
     } else if (f === 'desc') {
-      if (l.code) { const m = ensureModel(l.code); const v = el.value.trim(); m.descManual = v !== genDesc(l.code); m.desc = m.descManual ? v : ''; saveSet(); }
+      const h = holder(l); const v = el.value.trim();
+      if (l.code || h.part) { h.descManual = v !== autoDesc(l); h.desc = h.descManual ? v : ''; saveSet(); }
       else l.desc = el.value;
+    } else if (f === 'part') {
+      const h = holder(l); h.part = el.checked;
+      if (h.part) { if (!enOf(h)) h.en = l.code ? '' : (l.desc || ''); if (!h.parent) h.parent = guessParent(l.code, enOf(h), mainCodes().filter((c) => c !== l.code)); h.descManual = false; fillPartHS(); }
+      else if (h.hsSrc === 'sug') { h.hs = ''; h.hsSrc = ''; }
+      saveSet();
+    } else if (f === 'foc') { holder(l).foc = el.checked; saveSet(); }
+    else if (f === 'parent') { const h = holder(l); h.parent = el.value; if (h.hsSrc === 'sug') h.hs = ''; fillPartHS(); saveSet();
     } else if (f === 'unit') {
       if (l.code) { ensureModel(l.code).unit = el.value.trim().toUpperCase(); saveSet(); } else l.unit = el.value.trim().toUpperCase();
     }
@@ -507,7 +641,7 @@
     const b = e.target.closest('[data-act]'); if (!b) return;
     const id = b.closest('tr').dataset.id; const l = L.lines.find((x) => x.id === id);
     if (b.dataset.act === 'del') { L.lines = L.lines.filter((x) => x.id !== id); if (hsLine === id) hsLine = null; }
-    if (b.dataset.act === 'regen' && l.code) { const m = modelOf(l.code); m.descManual = false; m.desc = ''; saveSet(); }
+    if (b.dataset.act === 'regen') { const h = holder(l); h.descManual = false; h.desc = ''; saveSet(); }
     saveLot(); renderAll();
   });
   $('#lineBody').addEventListener('focusin', (e) => { if (e.target.dataset.f !== 'hs') return; hsLine = e.target.closest('tr').dataset.id; renderHsPanel(e.target.value); });
@@ -530,20 +664,24 @@
     if (!l) { box.hidden = true; return; }
     const i = L.lines.indexOf(l) + 1; const hs = lineHS(l);
     if (q === undefined || /^[\d.\s]*$/.test(q) && q.replace(/\D/g, '') === hs) q = '';
-    const t = l.code ? temOf(l.code) : {};
-    const query = q || t.nameVi || (modelOf(l.code) || {}).invName || '';
+    const part = isPart(l); const ps = part ? partSuggest(peek(l)) : null;
+    const t = l.code && !part ? temOf(l.code) : {};
+    const query = q || t.nameVi || (part ? '' : (modelOf(l.code) || {}).invName || '');
     const nq = normTxt(query); const nk = normKey(l.code);
     const lcs = lcProducts().filter((p) => lcHS(p) && ((nk && normKey(p.code) === nk) || (nk.length >= 5 && (normKey(p.code).includes(nk) || nk.includes(normKey(p.code))))
       || (nq && normTxt(p.name).includes(nq)) || (q && normTxt(p.code + ' ' + p.name).includes(normTxt(q))))).slice(0, 6);
-    const kws = kwSuggest(q || [t.nameVi, (modelOf(l.code) || {}).invName].filter(Boolean).join(' '));
+    const kws = part && !q ? [] : kwSuggest(q || [t.nameVi, (modelOf(l.code) || {}).invName].filter(Boolean).join(' '));
     const codes = searchTariff(query, 6);
     const item = (c, extra, src) => { const R = DB && DB.map.get(c); const r = rateOf(c);
       return `<button type="button" class="hs-opt${c === hs ? ' on' : ''}" data-hs="${c}" data-src="${src}"><b class="mono">${fmtHS(c)}</b>${extra ? ' ' + extra : ''}<span class="muted"> · MFN ${r && !r.bad ? fmt(r.mfn) : '–'}% · ACFTA ${r && has(r.acfta) ? fmt(r.acfta) + '%' : '–'}</span><br><span class="small">${esc(R ? shortDesc(R) : '')}</span></button>`; };
     box.hidden = false;
     box.innerHTML = `<div class="hs-head"><b>Mã HS cho dòng ${i}${l.code ? ' · ' + esc(l.code) : ''}</b><span class="help-text">${query ? 'tra theo: “' + esc(query) + '”' : 'gõ từ khoá hoặc đầu mã vào ô Mã HS'}</span><button type="button" class="btn btn-ghost btn-sm" data-act="close">Đóng</button></div>
-      ${lcs.length ? '<div class="hs-group">🚢 Sản phẩm trong Landed Cost</div>' + lcs.map((p) => item(lcHS(p), `<span class="chip-lc">${esc(p.code)} · ${esc(String(p.name || '').slice(0, 40))}</span>`, 'lc')).join('') : (lcProducts().length ? '' : '<p class="help-text">Landed Cost trên máy này chưa có sản phẩm — đang tra trong biểu thuế.</p>')}
+      ${part ? '<div class="hs-group">🔧 Gợi ý cho linh kiện' + (peek(l).parent ? ' của ' + esc(peek(l).parent) : '') + ' — chọn 1 mã để xác nhận</div>'
+        + (ps.list.length ? ps.list.map((x) => item(x.c, `<span class="chip-lc">${esc(x.label)}</span>`, '')).join('') : '<p class="help-text">Chọn "của máy" ở dòng hàng (hoặc máy chính chưa có mã HS) để tool gợi ý mã bộ phận.</p>')
+        + '<p class="help-text">Linh kiện chỉ dùng cho 1 loại máy → xếp vào "bộ phận" của máy đó; riêng động cơ, dây nguồn, phích cắm, công tắc, ốc vít, pin, sách HD… có nhóm riêng (Chú giải 2 Phần XVI).</p>' : ''}
+      ${lcs.length ? '<div class="hs-group">🚢 Sản phẩm trong Landed Cost</div>' + lcs.map((p) => item(lcHS(p), `<span class="chip-lc">${esc(p.code)} · ${esc(String(p.name || '').slice(0, 40))}</span>`, 'lc')).join('') : (lcProducts().length || part ? '' : '<p class="help-text">Landed Cost trên máy này chưa có sản phẩm — đang tra trong biểu thuế.</p>')}
       ${kws.length ? '<div class="hs-group">💡 Gợi ý theo tên hàng (bảng từ khoá của Landed Cost — đối chiếu đặc tính thực tế)</div>' + kws.map((k) => k.codes.map((c) => item(c, `<span class="chip-lc">${esc(k.label)}</span>${k.note ? ` <span class="muted small">${esc(k.note)}</span>` : ''}`, '')).join('')).join('') : ''}
-      ${codes.length ? '<div class="hs-group">📚 Tra trong biểu thuế</div>' + codes.map((c) => item(c, '', '')).join('') : (DB ? '<p class="help-text">Không thấy mã phù hợp — thử từ khoá khác (vd "quat", "may say toc") hoặc 4 số đầu mã.</p>' : '<p class="help-text">Đang tải biểu thuế…</p>')}`;
+      ${codes.length ? '<div class="hs-group">📚 Tra trong biểu thuế</div>' + codes.map((c) => item(c, '', '')).join('') : part && !q ? '' : (DB ? '<p class="help-text">Không thấy mã phù hợp — thử từ khoá khác (vd "quat", "may say toc") hoặc 4 số đầu mã.</p>' : '<p class="help-text">Đang tải biểu thuế…</p>')}`;
   }
   $('#hsPanel').addEventListener('click', (e) => {
     if (e.target.closest('[data-act="close"]')) { hsLine = null; renderAll(); return; }
@@ -552,7 +690,7 @@
   });
 
   /* ======================= 4. TEM PHỤ ======================= */
-  const temCodes = () => [...new Set(L.lines.map((l) => l.code).filter(Boolean))];
+  const temCodes = () => mainCodes();
   function temLines(code) {
     const t = temOf(code); const g = S.gen;
     const kv = (a, b) => (b ? `${a} : ${b}` : '');
@@ -623,7 +761,7 @@
   }
   $('#temList').addEventListener('change', async (e) => {
     const card = e.target.closest('.tem-card'); if (!card) return; const code = card.dataset.code; const m = ensureModel(code);
-    if (e.target.dataset.temfile !== undefined) { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) importTem(fs.slice(0, 1), code); return; }
+    if (e.target.dataset.temfile !== undefined) { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) importTem(fs, code); return; }
     if (e.target.dataset.img !== undefined) {
       const f = e.target.files[0]; if (!f) return;
       try { m.img = await shrinkImage(f); const s = S.sups.find((y) => y.id === m.supId) || sup(); if (s.id && !s.logo) s.logo = m.img; saveSet(); later(); }
@@ -653,33 +791,69 @@
     }
   });
   /* Nạp tem có sẵn (PDF / .ai / ảnh) → điền các ô tem của model. Không đọc mã vạch.
-     forCode: model của thẻ đang bấm; nạp ở nút chung thì tìm model theo dòng "Model :" trên tem. */
-  async function importTem(files, forCode) {
-    for (const f of files) {
-      try {
-        GauBep.toast(`🔎 Đang đọc tem ${f.name}… (lần đầu tải bộ đọc chữ tiếng Việt ~1,5 MB)`);
-        const { text } = await fileText(f, 'vie');
-        const x = P.tem(text);
-        const codes = temCodes();
-        let code = forCode || (x.model && codes.find((c) => normKey(c) === normKey(x.model))) || (codes.length === 1 ? codes[0] : '');
-        if (!code && x.model) code = x.model;
-        if (!code) { GauBep.toast(`${f.name}: không thấy dòng "Model" trên tem — bấm 📥 ở đúng thẻ model để nạp`); continue; }
-        const m = ensureModel(code);
-        const keys = ['nameVi', 'brand', 'voltage', 'power', 'year', 'pack', 'control', 'sizeP', 'sizeBox', 'wP', 'wBox', 'feature', 'makerVi', 'makerAddrVi'];
-        const got = keys.filter((k) => x[k]); got.forEach((k) => { m.tem[k] = x[k]; });
-        const s = S.sups.find((y) => y.id === m.supId) || sup();
-        if (s.id) { if (x.makerVi && !s.nameVi) s.nameVi = x.makerVi; if (x.makerAddrVi && !s.addrVi) s.addrVi = x.makerAddrVi; if (x.brand && !s.brand) s.brand = x.brand; }
-        let imp = '';
-        if (x.importerName && !S.gen.importerName) { S.gen.importerName = x.importerName; imp = ', nhà nhập khẩu'; }
-        if (x.importerAddr && !S.gen.importerAddr) S.gen.importerAddr = x.importerAddr;
-        if (x.model && normKey(x.model) !== normKey(code)) GauBep.toast(`⚠️ Tem ghi model ${x.model}, đang nạp cho ${code} — kiểm tra lại`);
-        else GauBep.toast(`Đã đọc tem ${code}: ${got.length} ô${imp} 🐼`);
-        m.temFile = f.name;
-      } catch (e) { GauBep.toast(`${f.name}: ${e.message || 'không đọc được tem'}`); }
-    }
-    saveSet(); renderAll();
+     Nạp nhiều file cùng lúc; 1 file có nhiều trang / nhiều tem cũng được — mỗi tem tìm model theo dòng "Model :".
+     Tem không khớp model nào trong lô → hiện ở danh sách bên dưới để chọn model. forCode: nạp từ nút trong thẻ model. */
+  let TEM_PENDING = []; let TEM_LOG = [];
+  const TEM_KEYS = ['nameVi', 'brand', 'voltage', 'power', 'year', 'pack', 'control', 'sizeP', 'sizeBox', 'wP', 'wBox', 'feature', 'makerVi', 'makerAddrVi'];
+  function applyTem(code, x, fname) {
+    const m = ensureModel(code);
+    const got = TEM_KEYS.filter((k) => x[k]); got.forEach((k) => { m.tem[k] = x[k]; });
+    const s = S.sups.find((y) => y.id === m.supId) || sup();
+    if (s.id) { if (x.makerVi && !s.nameVi) s.nameVi = x.makerVi; if (x.makerAddrVi && !s.addrVi) s.addrVi = x.makerAddrVi; if (x.brand && !s.brand) s.brand = x.brand; }
+    if (x.importerName && !S.gen.importerName) S.gen.importerName = x.importerName;
+    if (x.importerAddr && !S.gen.importerAddr) S.gen.importerAddr = x.importerAddr;
+    m.temFile = fname;
+    return got.length;
   }
+  async function importTem(files, forCode) {
+    if (busy) { GauBep.toast('Đang đọc file trước, chờ chút…'); return; }
+    busy = true; TEM_LOG = [];
+    try {
+      for (let n = 0; n < files.length; n++) {
+        const f = files[n];
+        try {
+          GauBep.toast(`🔎 Đang đọc tem ${n + 1}/${files.length}: ${f.name}… (lần đầu tải bộ đọc chữ tiếng Việt ~1,5 MB)`);
+          const { text } = await fileText(f, 'vie');
+          const list = P.tems(text);
+          if (!list.length) { TEM_LOG.push({ file: f.name, msg: 'không đọc được nội dung tem', bad: true }); continue; }
+          list.forEach((x, k) => {
+            const codes = temCodes();
+            let code = (x.model && codes.find((c) => normKey(c) === normKey(x.model))) || '';
+            if (!code && forCode && k === 0) code = forCode;
+            const name = f.name + (list.length > 1 ? ` (tem ${k + 1})` : '');
+            if (!code) { TEM_PENDING.push({ id: uid(), file: name, x }); TEM_LOG.push({ file: name, msg: `model ${x.model || '?'} không có trong lô — chọn model bên dưới`, bad: true }); return; }
+            const cnt = applyTem(code, x, name);
+            TEM_LOG.push({ file: name, msg: `→ ${code}: ${cnt} ô` + (x.model && normKey(x.model) !== normKey(code) ? ` (tem ghi ${x.model} — kiểm tra lại)` : ''), bad: !!(x.model && normKey(x.model) !== normKey(code)) });
+          });
+        } catch (e) { TEM_LOG.push({ file: f.name, msg: e.message || 'không đọc được tem', bad: true }); }
+      }
+    } finally { busy = false; }
+    saveSet(); renderAll();
+    const ok = TEM_LOG.filter((x) => !x.bad).length;
+    GauBep.toast(`Đã đọc ${ok}/${TEM_LOG.length} tem 🐼`);
+  }
+  function renderTemLog() {
+    const box = $('#temLog'); const codes = temCodes();
+    if (!TEM_LOG.length && !TEM_PENDING.length) { box.innerHTML = ''; return; }
+    box.innerHTML = (TEM_LOG.length ? `<div class="tem-log">${TEM_LOG.map((x) => `<div class="${x.bad ? 'bad' : 'ok'}">${x.bad ? '⚠️' : '✅'} <b>${esc(x.file)}</b> ${esc(x.msg)}</div>`).join('')}</div>` : '')
+      + TEM_PENDING.map((p) => `<div class="tem-pend" data-pid="${p.id}"><span>🏷️ <b>${esc(p.file)}</b> · ${esc(p.x.title || p.x.nameVi || '')}${p.x.model ? ' · Model ' + esc(p.x.model) : ''}</span>
+        <select data-pend-code><option value="">— gán cho model —</option>${codes.map((c) => `<option>${esc(c)}</option>`).join('')}</select>
+        <button type="button" class="btn btn-primary btn-sm" data-pend="apply">Áp dụng</button><button type="button" class="btn btn-ghost btn-sm" data-pend="drop">Bỏ</button></div>`).join('');
+  }
+  $('#temLog').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pend]'); if (!b) return; const row = b.closest('.tem-pend'); const p = TEM_PENDING.find((x) => x.id === row.dataset.pid);
+    if (b.dataset.pend === 'apply') {
+      const code = row.querySelector('[data-pend-code]').value; if (!code) { GauBep.toast('Chọn model trước'); return; }
+      const cnt = applyTem(code, p.x, p.file); GauBep.toast(`Đã gán tem cho ${code}`);
+      TEM_LOG = TEM_LOG.map((x) => (x.file === p.file ? { file: x.file, msg: `→ ${code}: ${cnt} ô (gán tay)`, bad: false } : x));
+    }
+    TEM_PENDING = TEM_PENDING.filter((x) => x !== p); saveSet(); renderAll();
+  });
   $('#fileTem').addEventListener('change', (e) => { importTem([...e.target.files]); e.target.value = ''; });
+  const tdz = $('#temDrop');
+  ['dragenter', 'dragover'].forEach((ev) => tdz.addEventListener(ev, (e) => { e.preventDefault(); tdz.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((ev) => tdz.addEventListener(ev, (e) => { e.preventDefault(); tdz.classList.remove('over'); }));
+  tdz.addEventListener('drop', (e) => importTem([...e.dataTransfer.files].filter((f) => /\.(pdf|ai|png|jpe?g|webp)$/i.test(f.name))));
 
   function shrinkImage(file) {
     return new Promise((res, rej) => {
@@ -734,6 +908,28 @@
       const bad = L.lines.filter((l) => lineHS(l) && !lineHS(l).startsWith(L.blHs.slice(0, 4)));
       if (bad.length) add('warn', `HS trên Bill là ${L.blHs}, khác nhóm với dòng ${bad.map((l) => l.code || '?').join(', ')} — xem lại`);
     }
+    // Arrival Notice, hoá đơn cước / bảo hiểm
+    if (L.docs.an) {
+      if (L.anBl && L.blNo) add(normKey(L.anBl).includes(normKey(L.blNo)) || normKey(L.blNo).includes(normKey(L.anBl)) ? 'ok' : 'err', normKey(L.anBl).includes(normKey(L.blNo)) || normKey(L.blNo).includes(normKey(L.anBl)) ? `Số vận đơn trên Arrival Notice khớp Bill (${L.blNo})` : `Arrival Notice ghi vận đơn ${L.anBl}, khác Bill ${L.blNo}`);
+      if (L.anVessel && L.vessel && !normKey(L.anVessel).includes(normKey(L.vessel).slice(0, 8)) && !normKey(L.vessel).includes(normKey(L.anVessel).slice(0, 8))) add('warn', `Tên tàu trên AN (${L.anVessel}) khác Bill (${L.vessel}) — tàu có thể đã đổi, khai theo AN`);
+      if (!L.arrival) add('warn', 'Không đọc được ngày hàng đến trên Arrival Notice — nhập tay ở mục 2');
+    }
+    if (L.freightDoc) {
+      const d = L.freightDoc;
+      add('ok', `Phí vận chuyển lấy từ ${d.file}: ${d.lines.map((x) => `${x.desc} = ${fmt(x.amt, 2)} ${x.cur}`).join(' + ')}`);
+      if (d.local && d.local.length) add('ok', `Đã bỏ qua phí local không cộng vào trị giá hải quan: ${d.local.slice(0, 6).join(', ')}`);
+    }
+    if (L.anFreightUsd && L.freightCur === 'USD' && has(L.freight) && Math.abs(L.anFreightUsd - L.freight) > 0.01) add('warn', `Cước trên Arrival Notice USD ${fmt(L.anFreightUsd, 2)} khác hoá đơn cước USD ${fmt(L.freight, 2)}`);
+    if (L.anFreightUsd && !has(L.freight)) add('warn', `Arrival Notice ghi cước O/F USD ${fmt(L.anFreightUsd, 2)} — chưa có hoá đơn cước, có thể khai tạm theo AN`);
+    if (L.insDoc) add('ok', `Phí bảo hiểm lấy từ ${L.insDoc.file}: ${L.insDoc.lines.map((x) => `${fmt(x.amt, 2)} ${x.cur}`).join(' + ')}`);
+    // linh kiện
+    L.lines.forEach((l, i) => {
+      const h = peek(l); if (!h.part) return;
+      const tr = V.part(enOf(h)); const nm = l.code || enOf(h) || `dòng ${i + 1}`;
+      if (h.hsSrc === 'sug') add('warn', `Dòng ${i + 1} (${nm}): mã HS ${fmtHS(h.hs)} là gợi ý tự động cho linh kiện — bấm ô Mã HS, chọn lại 1 mã để xác nhận`);
+      if (!h.parent && !tr.parentVi) add('warn', `Dòng ${i + 1} (${nm}): linh kiện chưa rõ của máy nào — chọn "của máy" để ghép mô tả và gợi ý HS`);
+      if (tr.unknown.length && !(h.descManual && h.desc)) add('warn', `Dòng ${i + 1} (${nm}): chưa dịch được "${tr.unknown.join('", "')}" — sửa tay mô tả`);
+    });
     // hợp đồng
     const s = sup();
     if (!s.name) add('warn', 'Chưa có nhà cung cấp — nạp hợp đồng (PDF / Word) hoặc thêm ở ⚙️ Cài đặt');
@@ -762,7 +958,7 @@
     if (L.pol && !P.POL[String(L.pol).toUpperCase()]) add('warn', `Chưa có mã cảng xếp cho "${L.pol}" — gõ mã trên ECUS`);
     const pod = podInfo();
     if (L.pod && !pod) add('warn', `Chưa có mã cảng dỡ cho "${L.pod}"`);
-    else if (pod && !pod.store) add('warn', `Chưa có mã địa điểm lưu kho cho ${pod.name} — xem Arrival Notice`);
+    else if (pod && !pod.store && !L.storeCode) add('warn', `Chưa có mã địa điểm lưu kho cho ${pod.name} — nạp Arrival Notice hoặc xem trên AN`);
     const miss = { arrival: 'ngày hàng đến', freight: 'phí vận chuyển', ins: 'phí bảo hiểm', rate: 'tỷ giá tính thuế' };
     const m = Object.keys(miss).filter((k) => !has(L[k])).map((k) => miss[k]);
     if (m.length) add('warn', 'Còn thiếu: ' + m.join(', '));
@@ -793,7 +989,7 @@
       ['Số vận đơn', [C(L.blNo && L.blDate ? ddmmyy(L.blDate) + L.blNo : '')]],
       ['Số lượng kiện', [C(raw(L.pkgs)), C('CT', 1)]], ['Tổng trọng lượng (Gross)', [C(raw(L.gw)), C('KGM', 1)]],
       ['Số lượng container', [C(contCount())]],
-      ['Địa điểm lưu kho', [C(pod && pod.store), C(pod && pod.storeName)]], ['Địa điểm dỡ hàng', [C(pod && pod.code), C(pod && pod.name)]],
+      ['Địa điểm lưu kho', [C(L.storeCode || (pod && pod.store)), C(L.storeCode && pod && L.storeCode !== pod.store ? '' : pod && pod.storeName)]], ['Địa điểm dỡ hàng', [C(pod && pod.code), C(pod && pod.name)]],
       ['Địa điểm xếp hàng', [C(pol && pol.code), C(pol && pol.name)]], ['Phương tiện vận chuyển', [C(g.ptvc, 1), C(L.vessel)]],
       ['Ngày hàng đến', [C(dmy(L.arrival))]],
     ];
@@ -803,7 +999,7 @@
     return [
       ['Số hoá đơn', [C('A', 1), C(L.invNo)]], ['Ngày phát hành', [C(dmy(L.invDate))]], ['Phương thức thanh toán', [C(g.pttt, 1)]],
       ['Tổng trị giá hoá đơn', [C('A', 1), C(term()), C('USD', 1), C(raw(L.invTotal))]], ['Mã phân loại khai trị giá', [C(g.mpltg, 1)]],
-      ['Phí vận chuyển', [C('A', 1), C('VND', 1), C(raw(L.freight))]], ['Phí bảo hiểm', [C('A', 1), C('VND', 1), C(raw(L.ins))]],
+      ['Phí vận chuyển', [C('A', 1), C(L.freightCur || 'VND', 1), C(raw(L.freight))]], ['Phí bảo hiểm', [C('A', 1), C(L.insCur || 'VND', 1), C(raw(L.ins))]],
       ['Chi tiết khai trị giá', [C(L.blDate ? ddmmyyyy(L.blDate) + '#&' : '')]],
       ['Giấy phép nhập khẩu', [C('RK01', 1), C(L.permit)]], ['Phần ghi chú', [C(note())]],
     ];
@@ -844,7 +1040,8 @@
   function taxCalc() {
     const rate = parseNum(L.rate); const t = term();
     const addFr = /^(FOB|EXW|FCA)$/.test(t), addIns = addFr || /^(CFR|CNF)$/.test(t);
-    const extra = (addFr ? parseNum(L.freight) || 0 : 0) + (addIns ? parseNum(L.ins) || 0 : 0);
+    const vndOf = (v, cur) => (parseNum(v) || 0) * (cur === 'USD' ? rate : 1);
+    const extra = (addFr ? vndOf(L.freight, L.freightCur) : 0) + (addIns ? vndOf(L.ins, L.insCur) : 0);
     const tot = L.lines.reduce((a, l) => a + lineAmt(l), 0);
     let base = 0, nk = 0, vat = 0;
     L.lines.forEach((l) => {
@@ -987,7 +1184,7 @@
 
   let pending = false;
   function later() { if (pending) return; pending = true; setTimeout(() => { pending = false; renderAll(); }, 0); }
-  function renderAll() { renderLot(); renderLines(); renderTem(); renderChecks(); renderOut(); renderTax(); renderSettings(); }
+  function renderAll() { renderLot(); renderLines(); renderTem(); renderTemLog(); renderChecks(); renderOut(); renderTax(); renderSettings(); }
   renderAll();
   loadTariff();
   loadLcKeywords();
