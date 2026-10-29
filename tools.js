@@ -8,11 +8,11 @@ window.TOOLS = [
     id: 'landed-cost',
     name: 'Landed Cost Nhập Khẩu',
     icon: '🚢',
-    description: 'Giá về kho theo mã HS, C/O (MFN/ACFTA/RCEP), cước cont, kiểm tra chuyên ngành. Tra cứu HS, nhập/xuất Excel. (v11)',
+    description: 'Giá về kho theo mã HS, C/O (MFN/ACFTA/RCEP), cước cont, kiểm tra chuyên ngành. Tra cứu HS, nhập/xuất Excel. (v12)',
     path: 'tools/landed-cost/index.html',
     status: 'live',
     category: 'Nhập khẩu',
-    updated: '2026-10-26',
+    updated: '2026-10-29',
   },
   {
     id: 'cost-payment',

@@ -7,8 +7,8 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚢</text></svg>">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap">
-<link rel="stylesheet" href="../../assets/theme.css?v=20261026a">
-<link rel="stylesheet" href="style.css?v=20261026a">
+<link rel="stylesheet" href="../../assets/theme.css?v=20261029a">
+<link rel="stylesheet" href="style.css?v=20261029a">
 </head>
 <body>
 <div class="wrap">
@@ -153,7 +153,7 @@
       <p><b>2. Bảo hiểm</b> = giá trị lô hàng (FOB) × tỷ lệ bảo hiểm (mặc định 0,09%). <b>Trị giá tính thuế (CIF)</b> = FOB + cước × (% cước tính thuế) + bảo hiểm, quy đổi theo tỷ giá.</p>
       <p><b>3. Thuế NK</b> = CIF × thuế suất. Mỗi sản phẩm chọn <i>Có C/O</i> hoặc <i>Không C/O</i>; bảng và file Excel chỉ hiện một mức thuế và một cột landed cost. Muốn xem cả hai phương án trên màn hình, đổi "Cách tính thuế NK" sang <i>So sánh có và không C/O</i>; file Excel vẫn chỉ xuất theo lựa chọn C/O. <i>Không C/O</i>: thuế NK ưu đãi (MFN). <i>Có C/O</i>: thuế suất thấp nhất trong các hiệp định áp dụng cho xuất xứ, ví dụ Trung Quốc lấy min(ACFTA – Form E, RCEP biểu C theo năm thông quan). Nước bị loại trừ trong ghi chú (vd "-TH") không được hưởng.</p>
       <p><b>4. Kiểm tra chuyên ngành.</b> QCVN 04: chi phí ÷ SL lô (tính mỗi lô, mỗi mã). QCVN 09, hiệu suất năng lượng, ATTP: chi phí ÷ SL nhập dự kiến trong năm của mã đó (mặc định = SL lô, tức 1 lô/năm).</p>
-      <p><b>5. Landed cost chưa VAT</b> = FOB + cước + bảo hiểm + thuế NK + phí kiểm tra + phí khác. VAT nhập khẩu = (CIF + thuế NK) × VAT, được khấu trừ nên không cộng vào giá vốn. <b>Landed cost gồm VAT</b> = landed cost chưa VAT + VAT NK phải nộp, là số tiền thực chi khi hàng về kho, dùng để tính dòng tiền.</p>
+      <p><b>5. Landed cost chưa VAT</b> = FOB + cước + bảo hiểm + thuế NK + phí kiểm tra + phí khác. VAT nhập khẩu = (CIF + thuế NK) × VAT, được khấu trừ nên không cộng vào giá vốn. <b>Giá vốn có VAT</b> = landed cost chưa VAT × (1 + VAT%), giống file PA giá. Cột "VAT nộp" ở bảng tổng hợp là VAT nhập khẩu thực nộp khi thông quan = (CIF + thuế NK) × VAT.</p>
       <h3 style="margin-top:16px">Tự nhận diện kiểm tra theo mã HS</h3>
       <ul>
         <li><b>QCVN 04 / QCVN 09:</b> tra Danh mục TT 36/2026/TT-BKHCN (hiệu lực 01/07/2026). Phụ lục I (rủi ro cao): chứng nhận hợp quy + kiểm tra nhà nước khi nhập. Phụ lục II (rủi ro trung bình): công bố hợp quy trước khi lưu thông.</li>
@@ -168,9 +168,9 @@
 </div>
 <div class="toast" id="toast" hidden></div>
 
-<script src="../../assets/common.js?v=20261026a"></script>
-<script src="tariff-data.js?v=20261026a"></script>
+<script src="../../assets/common.js?v=20261029a"></script>
+<script src="tariff-data.js?v=20261029a"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script src="app.js?v=20261026a"></script>
+<script src="app.js?v=20261029a"></script>
 </body>
 </html>
