@@ -15,8 +15,9 @@
    - Giá vốn (NK theo CIF) = Đơn giá × Tỷ giá PA × (1 + % chi phí)
                             + Đơn giá × Tỷ giá tính thuế × (1 + % CIF) × % thuế NK
        với % CIF = Σ phí đánh dấu CIF ÷ Tỷ giá tính thuế ÷ Tổng tiền hàng
-   - Đề nghị thanh toán: gộp theo Người nhận; các dòng cùng Số HĐ gộp thành 1 dòng (cộng +VAT);
-     dòng không có HĐ đứng riêng.
+   - Đề nghị thanh toán: gộp theo Người nhận; các dòng cùng Số HĐ gộp thành 1 dòng (cộng +VAT).
+     Chi phí KHÔNG HOÁ ĐƠN (VAT = "Không HĐ" và không có số HĐ) tách ra 1 phiếu riêng,
+     kể cả khi cùng người nhận với các khoản có hoá đơn.
 
    NHẬP HOÁ ĐƠN: invoice-parser.js đọc PDF (qua pdf.js) / XML → mỗi dòng hàng hoá dịch vụ thành 1 dòng phí.
    Người nhận TT tự chọn theo MST bên bán (danh bạ tự học khi người dùng đổi người nhận).
@@ -130,13 +131,17 @@
   }
 
   /* Gộp đề nghị thanh toán theo người nhận */
+  const NO_INV_TAG = ' · Không HĐ';
+  const isNoInv = (f) => !String(f.inv).trim() && f.vat === '';
   function buildPayments() {
     const by = new Map();
     L.fees.forEach((f) => {
       const post = feePost(f);
       if (!f.payee || (!parseNum(f.pre) && !post)) return;
-      if (!by.has(f.payee)) by.set(f.payee, []);
-      const lines = by.get(f.payee);
+      const noInv = isNoInv(f);
+      const key = noInv ? f.payee + NO_INV_TAG : f.payee;     // phiếu riêng cho chi phí không hoá đơn
+      if (!by.has(key)) by.set(key, { payee: f.payee, noInv, lines: [] });
+      const lines = by.get(key).lines;
       const inv = String(f.inv).trim();
       const ex = inv && lines.find((l) => l.inv === inv);
       if (ex) { ex.amount += post; ex.fees.push(f); }
@@ -147,8 +152,11 @@
     const goods = names.length <= 2 ? names.join(', ') : `${names[0]} + ${names.length - 1} mã khác`;
     const lot = [L.code ? `lô hàng ${L.code}` : (goods ? 'lô hàng' : ''), goods].filter(Boolean).join(' ');
     const tail = lot ? ` - ${lot}` : '';
-    return [...by.entries()].map(([payee, lines]) => ({
-      payee,
+    // phiếu không hoá đơn đứng ngay sau phiếu có hoá đơn của cùng người nhận
+    const firstAt = new Map(); [...by.values()].forEach((v, i) => { if (!firstAt.has(v.payee)) firstAt.set(v.payee, i); });
+    const ordered = [...by.entries()].sort(([, x], [, y]) => (firstAt.get(x.payee) - firstAt.get(y.payee)) || (x.noInv - y.noInv));
+    return ordered.map(([key, { payee, noInv, lines }]) => ({
+      key, payee, noInv,
       lines: lines.map((l) => {
         const custom = l.fees.find((f) => String(f.content).trim());
         const text = custom ? custom.content
@@ -308,13 +316,13 @@
   const isoDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const ROWS_MIN = 5;
 
-  function dnState(payee) {
-    if (!L.dn[payee]) {
+  function dnState(key, payee = key) {      // key = người nhận (+ " · Không HĐ" với phiếu không hoá đơn)
+    if (!L.dn[key]) {
       const p = S.payees.find((x) => x.key === payee);
       const due = new Date(); due.setDate(due.getDate() + (p && p.days !== '' && p.days != null ? parseNum(p.days) : 3));
-      L.dn[payee] = { companyId: L.companyId, advance: '', due: isoDate(due) };
+      L.dn[key] = { companyId: L.companyId, advance: '', due: isoDate(due) };
     }
-    return L.dn[payee];
+    return L.dn[key];
   }
 
   function renderDN() {
@@ -322,7 +330,7 @@
     if (!list.length) { $('dnList').innerHTML = `<div class="note">🐼 Chưa có phiếu nào — chọn <b>Người nhận TT</b> cho các dòng phí ở bước 3.</div>`; return; }
     const today = dateVN(new Date());
     $('dnList').innerHTML = list.map((pm, idx) => {
-      const st = dnState(pm.payee);
+      const st = dnState(pm.key, pm.payee);
       const co = S.companies.find((c) => c.id === st.companyId) || S.companies[0] || {};
       const p = S.payees.find((x) => x.key === pm.payee) || {};
       const total = pm.lines.reduce((a, l) => a + l.amount, 0);
@@ -330,9 +338,9 @@
       const rows = [...pm.lines]; while (rows.length < ROWS_MIN) rows.push(null);
       const due = st.due ? dateVN(new Date(st.due + 'T00:00:00')) : '';
       return `
-      <article class="dn-card" data-payee="${esc(pm.payee)}">
+      <article class="dn-card${pm.noInv ? ' no-inv' : ''}" data-key="${esc(pm.key)}">
         <div class="dn-controls no-print">
-          <b>${esc(pm.payee)}</b>
+          <b>${esc(pm.payee)}</b>${pm.noInv ? ' <span class="badge soon">Không hoá đơn</span>' : ''}
           <label>Công ty <select data-dn="companyId">${S.companies.map((c, i) => `<option value="${c.id}" ${c.id === co.id ? 'selected' : ''}>${esc(c.name || `Công ty ${i + 1}`)}</option>`).join('')}</select></label>
           <label>Đã tạm ứng <input data-dn="advance" value="${esc(st.advance)}" inputmode="decimal" style="width:120px"></label>
           <label>Thời hạn TT <input data-dn="due" type="date" value="${esc(st.due)}"></label>
@@ -385,12 +393,12 @@
   }
   $('dnList').addEventListener('change', (e) => {
     const k = e.target.dataset.dn; if (!k) return;
-    const payee = e.target.closest('.dn-card').dataset.payee;
-    dnState(payee)[k] = e.target.value; update();
+    const key = e.target.closest('.dn-card').dataset.key;
+    dnState(key)[k] = e.target.value; update();
   });
   $('dnList').addEventListener('click', (e) => {
     const x = e.target.closest('[data-xlsx]');
-    if (x) { exportDn(x.closest('.dn-card').dataset.payee); return; }
+    if (x) { exportDn(x.closest('.dn-card').dataset.key); return; }
     const b = e.target.closest('[data-print]'); if (!b) return;
     printDN(b.closest('.dn-card'));
   });
@@ -798,16 +806,16 @@
   };
 
   /* Phiếu đề nghị thanh toán dạng Excel: 1 người nhận (payee) hoặc tất cả (mỗi người 1 sheet) */
-  async function buildDnData(onlyPayee) {
+  async function buildDnData(onlyKey) {
     const dn = [];
     for (const pm of buildPayments()) {
-      if (onlyPayee && pm.payee !== onlyPayee) continue;
-      const st = dnState(pm.payee);
+      if (onlyKey && pm.key !== onlyKey) continue;
+      const st = dnState(pm.key, pm.payee);
       const co = S.companies.find((x) => x.id === st.companyId) || S.companies[0] || {};
       const p = S.payees.find((x) => x.key === pm.payee) || {};
       const [lw, lh] = co.logo ? await imgSize(co.logo) : [0, 0];
       dn.push({
-        sheet: pm.payee, company: co, logo: co.logo, logoW: lw, logoH: lh, to: S.to, requester: S.requester, dept: S.dept, city: S.city,
+        sheet: pm.noInv ? 'KHÔNG HĐ ' + pm.payee : pm.payee, company: co, logo: co.logo, logoW: lw, logoH: lh, to: S.to, requester: S.requester, dept: S.dept, city: S.city,
         date: (() => { const t = new Date(); return new Date(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate())); })(), lines: pm.lines, advance: parseNum(st.advance), holder: p.holder || pm.payee, acc: p.acc || '', bank: p.bank || '',
         due: st.due ? new Date(st.due + 'T00:00:00Z') : '',
       });
@@ -824,13 +832,13 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     toast('Đã xuất file Excel 🎉');
   }
-  async function exportDn(onlyPayee) {
+  async function exportDn(onlyKey) {
     try {
-      const dn = await buildDnData(onlyPayee);
+      const dn = await buildDnData(onlyKey);
       if (!dn.length) { toast('Chưa có phiếu nào để xuất'); return; }
       const ExcelJS = await loadExcelJS();
       const wb = CostPaymentExport.build(ExcelJS, { dn }, { onlyDn: true });
-      const who = onlyPayee ? fileTag(onlyPayee) : 'TatCa';
+      const who = onlyKey ? fileTag(onlyKey.replace(NO_INV_TAG, '_KhongHD')) : 'TatCa';
       await saveWorkbook(wb, `DNTT_${who}_${fileTag(L.code || 'lo')}_${GauBep.today()}.xlsx`);
     } catch (err) {
       toast(err.message || 'Không xuất được file');

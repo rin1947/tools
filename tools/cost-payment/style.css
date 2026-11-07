@@ -41,6 +41,7 @@
 /* ---------- Phiếu đề nghị thanh toán ---------- */
 .dn-list { display: grid; gap: 22px; margin-top: 14px; }
 .dn-card { border: 2px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.dn-card.no-inv { border-style: dashed; }
 .dn-controls {
   display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; padding: 10px 14px;
   background: var(--accent-bg); border-bottom: 2px dashed var(--border); font-size: 13px; font-weight: 700;
