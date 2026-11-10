@@ -60,7 +60,7 @@
     ['BH', 'Phí bảo hiểm hàng hoá', '10', true],
   ].map(([group, name, vat, cif]) => ({ group, name, vat, cif: !!cif }));
 
-  const newFee = (o = {}) => ({ id: uid(), group: 'KT', name: '', pre: '', vat: '8', vatAmt: '', inv: '', date: '', note: '', payee: '', content: '', cif: false, pin: false, src: '', seller: '', sellerMst: '', desc: '', ...o });
+  const newFee = (o = {}) => ({ id: uid(), group: 'KT', name: '', pre: '', vat: '8', vatAmt: '', inv: '', date: '', invDue: '', note: '', payee: '', content: '', cif: false, pin: false, src: '', seller: '', sellerMst: '', desc: '', ...o });
   const newItem = (o = {}) => ({ id: uid(), code: '', name: '', color: '', qty: '', price: '', hs: '', nk: '', ...o });
 
   const DEFAULT_SETTINGS = {
@@ -156,7 +156,7 @@
     const firstAt = new Map(); [...by.values()].forEach((v, i) => { if (!firstAt.has(v.payee)) firstAt.set(v.payee, i); });
     const ordered = [...by.entries()].sort(([, x], [, y]) => (firstAt.get(x.payee) - firstAt.get(y.payee)) || (x.noInv - y.noInv));
     return ordered.map(([key, { payee, noInv, lines }]) => ({
-      key, payee, noInv,
+      key, payee, noInv, fees: lines.flatMap((l) => l.fees),
       lines: lines.map((l) => {
         const custom = l.fees.find((f) => String(f.content).trim());
         const text = custom ? custom.content
@@ -316,13 +316,32 @@
   const isoDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const ROWS_MIN = 5;
 
-  function dnState(key, payee = key) {      // key = người nhận (+ " · Không HĐ" với phiếu không hoá đơn)
-    if (!L.dn[key]) {
-      const p = S.payees.find((x) => x.key === payee);
-      const due = new Date(); due.setDate(due.getDate() + (p && p.days !== '' && p.days != null ? parseNum(p.days) : 3));
-      L.dn[key] = { companyId: L.companyId, advance: '', due: isoDate(due) };
+  /* Thời hạn TT tự tính (người dùng sửa tay ở phiếu thì giữ nguyên bản sửa tay):
+     - Mốc chung = ngày HĐ cước vận chuyển (Cước QT, HĐ sớm nhất) + số ngày công nợ của người nhận cước
+       → mọi phiếu khác (phí làm hàng, không HĐ…) dùng chung mốc này.
+     - Riêng phiếu chỉ gồm HĐ bảo hiểm: lấy hạn TT ghi trên HĐ; không đọc được thì ngày HĐ + số ngày công nợ.
+     - Chưa có HĐ cước có ngày: hôm nay + số ngày công nợ (như cũ). */
+  const payeeDays = (name, fb) => { const p = S.payees.find((x) => x.key === name); return p && p.days !== '' && p.days != null ? parseNum(p.days) : fb; };
+  const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return isoDate(d); };
+  function freightDue() {
+    const fr = L.fees.filter((f) => f.group === 'OF' && f.date && String(f.inv).trim()).sort((a, b) => a.date.localeCompare(b.date))[0];
+    return fr ? addDays(fr.date, payeeDays(fr.payee, 30)) : '';
+  }
+  function autoDue(pm) {
+    const fees = (pm && pm.fees) || [];
+    if (fees.length && fees.every((f) => f.group === 'BH')) {
+      const own = fees.map((f) => f.invDue).filter(Boolean).sort()[0];
+      if (own) return own;
+      const d = fees.map((f) => f.date).filter(Boolean).sort()[0];
+      if (d) return addDays(d, payeeDays(pm.payee, 30));
     }
-    return L.dn[key];
+    return freightDue() || addDays(isoDate(new Date()), payeeDays(pm ? pm.payee : '', 3));
+  }
+  function dnState(key, payee = key, pm) {  // key = người nhận (+ " · Không HĐ" với phiếu không hoá đơn)
+    if (!L.dn[key]) L.dn[key] = { companyId: L.companyId, advance: '' };
+    const st = L.dn[key];
+    if (!st.dueManual && pm) st.due = autoDue(pm);
+    return st;
   }
 
   function renderDN() {
@@ -330,7 +349,7 @@
     if (!list.length) { $('dnList').innerHTML = `<div class="note">🐼 Chưa có phiếu nào — chọn <b>Người nhận TT</b> cho các dòng phí ở bước 3.</div>`; return; }
     const today = dateVN(new Date());
     $('dnList').innerHTML = list.map((pm, idx) => {
-      const st = dnState(pm.key, pm.payee);
+      const st = dnState(pm.key, pm.payee, pm);
       const co = S.companies.find((c) => c.id === st.companyId) || S.companies[0] || {};
       const p = S.payees.find((x) => x.key === pm.payee) || {};
       const total = pm.lines.reduce((a, l) => a + l.amount, 0);
@@ -343,7 +362,7 @@
           <b>${esc(pm.payee)}</b>${pm.noInv ? ' <span class="badge soon">Không hoá đơn</span>' : ''}
           <label>Công ty <select data-dn="companyId">${S.companies.map((c, i) => `<option value="${c.id}" ${c.id === co.id ? 'selected' : ''}>${esc(c.name || `Công ty ${i + 1}`)}</option>`).join('')}</select></label>
           <label>Đã tạm ứng <input data-dn="advance" value="${esc(st.advance)}" inputmode="decimal" style="width:120px"></label>
-          <label>Thời hạn TT <input data-dn="due" type="date" value="${esc(st.due)}"></label>
+          <label>Thời hạn TT <input data-dn="due" type="date" value="${esc(st.due)}" title="${st.dueManual ? 'Đã sửa tay — xoá trống để tự tính lại' : 'Tự tính: ngày HĐ cước + công nợ (bảo hiểm theo hạn trên HĐ)'}"></label>${st.dueManual ? '<span class="badge soon">sửa tay</span>' : ''}
           <button class="btn btn-primary btn-sm" data-print="${idx}">🖨️ In phiếu này</button>
           <button class="btn btn-ghost btn-sm" data-xlsx="${idx}">📗 Xuất Excel phiếu này</button>
           ${!p.key ? '<span class="warn">⚠ Chưa có trong danh bạ — thêm STK ở Cài đặt</span>' : ''}
@@ -394,7 +413,9 @@
   $('dnList').addEventListener('change', (e) => {
     const k = e.target.dataset.dn; if (!k) return;
     const key = e.target.closest('.dn-card').dataset.key;
-    dnState(key)[k] = e.target.value; update();
+    const st = dnState(key); st[k] = e.target.value;
+    if (k === 'due') st.dueManual = !!e.target.value;      // xoá trống ô ngày → quay lại tự tính
+    update();
   });
   $('dnList').addEventListener('click', (e) => {
     const x = e.target.closest('[data-xlsx]');
@@ -682,7 +703,7 @@
       const cif = (group === 'OF' && /cước/i.test(ln.desc)) || group === 'BH';
       const data = {
         group, name, pre: String(ln.pre), vat: ln.rate == null ? '' : String(ln.rate), vatAmt: String(ln.vat),
-        inv: inv.no, date: inv.date || '', payee, src: 'inv', batch: batchId, learned: !!S.nameGroup[normName(ln.desc)], seller: shortName(inv.seller), sellerMst: inv.sellerMst, desc: ln.desc, cif,
+        inv: inv.no, date: inv.date || '', invDue: inv.due || '', payee, src: 'inv', batch: batchId, learned: !!S.nameGroup[normName(ln.desc)], seller: shortName(inv.seller), sellerMst: inv.sellerMst, desc: ln.desc, cif,
       };
       // ưu tiên điền vào dòng mẫu còn trống (cùng tên / dòng cước-bảo hiểm đã có số từ tờ khai)
       const empty = (f) => f.src !== 'inv' && !String(f.inv).trim();
@@ -810,7 +831,7 @@
     const dn = [];
     for (const pm of buildPayments()) {
       if (onlyKey && pm.key !== onlyKey) continue;
-      const st = dnState(pm.key, pm.payee);
+      const st = dnState(pm.key, pm.payee, pm);
       const co = S.companies.find((x) => x.id === st.companyId) || S.companies[0] || {};
       const p = S.payees.find((x) => x.key === pm.payee) || {};
       const [lw, lh] = co.logo ? await imgSize(co.logo) : [0, 0];

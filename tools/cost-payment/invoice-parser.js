@@ -86,6 +86,12 @@
       m = l.text.match(/(\d{1,2})\s*(?:\/|tháng[^0-9]*)\s*(\d{1,2})\s*(?:\/|năm[^0-9]*)\s*(\d{4})/i);
       if (m) { res.date = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; break; }
     }
+    // Hạn thanh toán ghi trên hoá đơn (nếu có — thường gặp ở hoá đơn bảo hiểm)
+    for (const l of lines) {
+      if (!/Hạn\s*(?:thanh\s*toán|TT|nộp\s*phí)|Due\s*date/i.test(l.text)) continue;
+      m = l.text.match(/(\d{1,2})\s*(?:\/|-|\.|tháng[^0-9]*)\s*(\d{1,2})\s*(?:\/|-|\.|năm[^0-9]*)\s*(\d{4})/i);
+      if (m) { res.due = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; break; }
+    }
 
     // Người bán: MST đầu tiên trên hoá đơn + tên công ty ngay phía trên
     const mstRe = /Mãsốthuế(?:\([^)]*\))?:?(\d{10}(?:-\d{3})?)/gi;
@@ -262,6 +268,14 @@
       seller: q(nb, 'Ten'), sellerMst: q(nb, 'MST'), bankAcc: q(nb, 'STKNHang'), bankName: q(nb, 'TNHang'),
       buyerMst: q(doc.getElementsByTagName('NMua')[0], 'MST'), lines: [], warnings: [],
     };
+    // Hạn thanh toán ghi trong trường bổ sung (nếu NCC có khai báo)
+    [...doc.getElementsByTagName('TTin')].some((t) => {
+      if (!/h[aạ]n.?(thanh.?to[aá]n|tt)|due/i.test(q(t, 'TTruong'))) return false;
+      const v = q(t, 'DLieu'); let m2 = v.match(/^(\d{4})-(\d{2})-(\d{2})/) || v.match(/(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/);
+      if (!m2) return false;
+      res.due = m2[1].length === 4 ? `${m2[1]}-${m2[2]}-${m2[3]}` : `${m2[3]}-${m2[2].padStart(2, '0')}-${m2[1].padStart(2, '0')}`;
+      return true;
+    });
     const num = (s) => { const n = parseFloat(String(s).replace(',', '.')); return isFinite(n) ? n : 0; };
     [...doc.getElementsByTagName('HHDVu')].forEach((h) => {
       const tchat = q(h, 'TChat');
