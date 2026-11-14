@@ -817,9 +817,9 @@
       const items = L.items.filter((it) => it.code || it.name || String(it.price).trim()).map((it) => ({
         code: it.code, name: it.name, color: it.color, qty: parseNum(it.qty), price: parseNum(it.price), hs: it.hs, nk: parseNum(it.nk),
       }));
-      const dn = await buildDnData();
+      /* File PA giá chỉ gồm BẢNG KÊ CHI PHÍ + PHƯƠNG ÁN GIÁ — phiếu ĐNTT xuất riêng ở mục Đề nghị thanh toán */
       const ExcelJS = await loadExcelJS();
-      const wb = CostPaymentExport.build(ExcelJS, { lot: L, rate: c.rate, items, fees, dn });
+      const wb = CostPaymentExport.build(ExcelJS, { lot: L, rate: c.rate, items, fees }, { noDn: true });
       await saveWorkbook(wb, `PAGia_${fileTag(L.code || 'lo')}_${GauBep.today()}.xlsx`);
     } catch (err) {
       toast(err.message || 'Không xuất được file');

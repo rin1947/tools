@@ -13,7 +13,7 @@
      PHÍ BH   = SUM(khối BẢO HIỂM) / Tỷ giá
      TOTAL    = OF + Làm hàng + BH ;  %  = TOTAL / Tổng tiền hàng
      GIÁ VỐN DỰ KIẾN = E × (1 + %) × Tỷ giá × (1 + % thuế NK)
-   Sheet "ĐNTT …" — mỗi người nhận 1 phiếu theo mẫu Giấy đề nghị thanh toán.
+   Sheet "ĐNTT …" (chỉ khi xuất phiếu ĐNTT, opt.onlyDn; nút "Xuất Excel" PA giá dùng opt.noDn → không có sheet này) — mỗi người nhận 1 phiếu theo mẫu Giấy đề nghị thanh toán.
    ========================================================= */
 (function (root) {
   const ACC0 = '_(* #,##0_);_(* \\(#,##0\\);_(* \\-_);_(@_)';
@@ -40,7 +40,7 @@
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Gấu Bép';
     if (!opt.onlyDn) buildCost(wb, data);
-    buildDn(wb, data.dn || [], opt.onlyDn ? [] : ['BẢNG KÊ CHI PHÍ', 'PHƯƠNG ÁN GIÁ']);
+    if (!opt.noDn) buildDn(wb, data.dn || [], opt.onlyDn ? [] : ['BẢNG KÊ CHI PHÍ', 'PHƯƠNG ÁN GIÁ']);
     return wb;
   }
 
