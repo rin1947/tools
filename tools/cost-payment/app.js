@@ -666,7 +666,15 @@
   function payeeFor(inv) {
     if (!inv.sellerMst) return '';
     const hit = S.payees.find((p) => mstList(p).includes(inv.sellerMst));
-    if (hit) return hit.key;
+    if (hit) {
+      // người nhận đã lưu từ trước nhưng còn thiếu tên TK / số TK / ngân hàng → bổ sung từ hoá đơn (không ghi đè ô đã có)
+      let changed = false;
+      if (!String(hit.holder || '').trim() && inv.seller) { hit.holder = inv.seller; changed = true; }
+      if (!String(hit.acc || '').trim() && inv.bankAcc) { hit.acc = inv.bankAcc; changed = true; }
+      if (!String(hit.bank || '').trim() && inv.bankName && (!inv.bankAcc || String(hit.acc).replace(/\D/g, '') === inv.bankAcc)) { hit.bank = inv.bankName; changed = true; }
+      if (changed) saveSet();
+      return hit.key;
+    }
     let key = shortName(inv.seller) || inv.sellerMst; let n = 2;
     while (S.payees.some((p) => p.key === key)) key = `${shortName(inv.seller)} (${n++})`;
     S.payees.push({ key, holder: inv.seller || '', acc: inv.bankAcc || '', bank: inv.bankName || '', days: '30', msts: inv.sellerMst });
