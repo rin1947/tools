@@ -189,7 +189,7 @@ Phong cách: **hồng cute · xanh tre · gấu trúc**. Mềm, bo tròn, thân 
 - **Số tiền:** hiển thị bằng `GauBep.fmt.vnd()`; đọc ô nhập bằng `GauBep.parseNum()` (hiểu cả `1.234,5` và `1,234.5`).
 - **Lưu trạng thái:** `GauBep.store.get/set` với khoá `'<tool-id>:v1'`. Đổi cấu trúc dữ liệu → tăng `v2`.
 - **Xuất Excel:** `GauBep.exportXlsx(tênFile, [{ name, rows, colWidths }])`. Số xuất ra dạng **number** (không phải chuỗi đã format). Tên file: `<TienTo>_<tên>_<ddmmyy>.xlsx` (dùng `GauBep.today()`).
-- **Chống cache khi cập nhật:** trong `index.html` của tool, file CSS/JS nội bộ gắn đuôi `?v=YYYYMMDDx` (vd `app.js?v=20261026c`). Mỗi lần sửa tool phải **tăng** đuôi này, nếu không trình duyệt có thể vẫn chạy bản cũ.
+- **Chống cache khi cập nhật:** trong `index.html` của tool, file CSS/JS nội bộ gắn đuôi `?v=YYYYMMDDx` (vd `app.js?v=20261026c`). Mỗi lần sửa tool phải **tăng** đuôi này, nếu không trình duyệt có thể vẫn chạy bản cũ. Sửa `tools.js` (vd đổi ngày `updated`) thì cũng tăng đuôi `tools.js?v=…` trong `index.html` gốc.
 - **Thư viện ngoài:** chỉ khi thật cần, chỉ lấy từ `cdnjs.cloudflare.com`, và tải lười (lazy) như `loadSheetJS` trong `common.js`.
   Ngoại lệ: OCR (tesseract.js 5.1.1 + tesseract.js-core + dữ liệu chữ `@tesseract.js-data/eng`, và `@tesseract.js-data/vie` cho tem phụ) và **bảng mã font pdf.js** (`pdfjs-dist@3.11.174/cmaps/`, `standard_fonts/` — cần để đọc PDF dùng font Trung Quốc) lấy từ `cdn.jsdelivr.net` (cdnjs không có bộ core/dữ liệu); ghim đúng phiên bản, ảnh vẫn xử lý trên máy, không gửi đi.
 - **Không** gọi API ngoài với dữ liệu người dùng. **Không** đưa dữ liệu thật (giá, NCC, hoá đơn) vào repo — chỉ dữ liệu mẫu.
