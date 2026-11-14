@@ -6,7 +6,7 @@
   <title>PA giá &amp; Đề nghị thanh toán</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧾</text></svg>">
   <link rel="stylesheet" href="../../assets/theme.css?v=20261107a">
-  <link rel="stylesheet" href="style.css?v=20261107a">
+  <link rel="stylesheet" href="style.css?v=20261114b">
 </head>
 <body>
   <main class="page">
@@ -23,10 +23,10 @@
 
       <div class="toolbar no-print">
         <button class="btn btn-pink btn-sm" id="btnNewLot">✨ Lô mới</button>
-        <label class="btn btn-primary btn-sm file-btn">📄 Nhập hoá đơn (PDF / XML)
+        <label class="btn btn-primary btn-sm file-btn drop-target" title="Bấm để chọn, hoặc kéo thả file hoá đơn vào đây">📄 Nhập hoá đơn (PDF / XML)
           <input type="file" id="fileInvoice" accept=".pdf,.xml" multiple hidden>
         </label>
-        <label class="btn btn-ghost btn-sm file-btn">📥 Nạp tờ khai ECUS (.xlsx)
+        <label class="btn btn-ghost btn-sm file-btn drop-target" id="ecusDrop" title="Bấm để chọn, hoặc kéo thả file tờ khai vào đây">📥 Nạp tờ khai ECUS (.xlsx) — kéo thả được
           <input type="file" id="fileEcus" accept=".xlsx,.xls" hidden>
         </label>
         <button class="btn btn-ghost btn-sm" id="btnSample">🐼 Nạp dữ liệu mẫu</button>
@@ -131,7 +131,7 @@
         <h2 class="section-title"><span class="num">3</span> Bảng kê chi phí</h2>
         <div class="dropzone no-print" id="dropzone">
           <div class="dz-icon">📄</div>
-          <div><b>Kéo thả hoá đơn PDF / XML vào đây</b> (nhiều file cùng lúc) — hoặc bấm <label class="link file-btn">chọn file<input type="file" id="fileInvoice2" accept=".pdf,.xml" multiple hidden></label>.
+          <div><b>Kéo thả hoá đơn PDF / XML và tờ khai ECUS (.xlsx) vào đây</b> (nhiều file cùng lúc) — hoặc bấm <label class="link file-btn">chọn file<input type="file" id="fileInvoice2" accept=".pdf,.xml" multiple hidden></label>.
           <div class="help-text">Thả luôn file tờ khai ECUS (.xlsx) vào đây cũng được. File chỉ đọc trên máy, không gửi đi đâu.</div></div>
         </div>
         <div id="importLog" class="import-log no-print"></div>
@@ -172,7 +172,7 @@
 
   <script src="../../assets/common.js?v=20261107a"></script>
   <script src="invoice-parser.js?v=20261107a"></script>
-  <script src="export-xlsx.js?v=20261114a"></script>
-  <script src="app.js?v=20261114a"></script>
+  <script src="export-xlsx.js?v=20261114b"></script>
+  <script src="app.js?v=20261114b"></script>
 </body>
 </html>

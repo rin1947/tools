@@ -783,9 +783,29 @@
     if (ev === 'dragleave' && e.relatedTarget) return;
     dz.classList.remove('over');
   }));
+  ['dragenter', 'dragover'].forEach((ev) => document.addEventListener(ev, (e) => {
+    if ([...(e.dataTransfer?.types || [])].includes('Files')) document.body.classList.add('dragging');
+  }));
+  ['dragleave', 'drop'].forEach((ev) => document.addEventListener(ev, (e) => {
+    if (ev === 'dragleave' && e.relatedTarget) return;
+    document.body.classList.remove('dragging');
+  }));
+  // tô sáng nút đang được rê file lên
+  document.querySelectorAll('.drop-target').forEach((el) => {
+    el.addEventListener('dragover', () => el.classList.add('over'));
+    el.addEventListener('dragleave', () => el.classList.remove('over'));
+    el.addEventListener('drop', () => el.classList.remove('over'));
+  });
   document.addEventListener('drop', (e) => {
     if (!e.dataTransfer?.files?.length) return;
-    e.preventDefault(); importFiles(e.dataTransfer.files);
+    e.preventDefault();
+    document.body.classList.remove('dragging');
+    // thả đúng vào nút "Nạp tờ khai" → coi file Excel đó là tờ khai (kể cả tên file lạ)
+    if (e.target.closest && e.target.closest('#ecusDrop')) {
+      const f = [...e.dataTransfer.files].find((x) => !/\.(pdf|xml)$/i.test(x.name));
+      if (f) { importEcus(f); return; }
+    }
+    importFiles(e.dataTransfer.files);
   });
 
   /* ======================= XUẤT EXCEL ======================= */

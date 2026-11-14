@@ -20,6 +20,9 @@
   transition: background .15s, border-color .15s, transform .15s;
 }
 .dropzone.over { background: var(--pink-100); border-color: var(--pink-400); transform: scale(1.01); }
+/* khi đang kéo file: nút nhập hoá đơn / tờ khai cũng nhận thả */
+body.dragging .drop-target { outline: 2.5px dashed var(--pink-400); outline-offset: 3px; }
+.drop-target.over { background: var(--pink-100); color: var(--panda-ink); transform: scale(1.04); }
 .dz-icon { font-size: 34px; }
 .link { color: var(--accent); font-weight: 800; text-decoration: underline; }
 .import-log { display: grid; gap: 4px; margin-bottom: 12px; font-size: 13px; }
