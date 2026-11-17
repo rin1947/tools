@@ -141,7 +141,11 @@
 
     // Bảng hàng hoá
     const head = cells.find((c) => /^STT\b/i.test(c.s));
-    if (!head) { res.warnings.push('Không tìm thấy bảng hàng hoá (cột STT)'); return finish(res, lines); }
+    if (!head) {
+      // hoá đơn không có cột STT (vd mẫu Viettel của hãng tàu / depot): bảng bắt đầu bằng "Tên hàng hóa, dịch vụ"
+      if (tableNoStt(res, cells, lines, text)) { totalOf(res, lines, cells, null); return finish(res, lines); }
+      res.warnings.push('Không tìm thấy bảng hàng hoá (cột STT)'); return finish(res, lines);
+    }
     const p = head.p;
     const H = head.h;
     // tiêu đề chính cùng hàng với "STT" (bỏ dòng phụ tiếng Anh trong ngoặc)
@@ -189,7 +193,7 @@
     });
     items.forEach((it) => { it.desc = it.desc.sort((a, b) => b.y - a.y || a.x - b.x).map((c) => c.s).join(' '); });
 
-    const docRate = (() => { const mm = text.match(/Thuế\s*suất\s*(?:GTGT|thuế\s*GTGT)?\s*(?:\([^)]*\))?\s*:\s*(\d+(?:[.,]\d+)?)\s*%/i); return mm ? vn(mm[1]) : null; })();
+    const docRate = docRateOf(text);
     items.forEach((it) => {
       const pct = it.nums.find((c) => isPct(c.s));
       const money = (arr) => arr.map((c) => vn(c.s)).filter((n) => isFinite(n));
@@ -212,16 +216,64 @@
       res.lines.push({ desc: it.desc, pre, rate: rate == null ? null : rate, vat });
     });
 
-    // Tổng thanh toán: số lớn nhất trên các dòng "Tổng…/Total" (bỏ dòng bằng chữ)
+    totalOf(res, lines, cells, { p, y: sttCells.length ? sttCells[sttCells.length - 1].y : head.y });
+    return finish(res, lines);
+  }
+
+  const docRateOf = (text) => { const mm = text.match(/Thuế\s*suất\s*(?:GTGT|thuế\s*GTGT)?\s*(?:\([^)]*\))?\s*:\s*(\d+(?:[.,]\d+)?)\s*%/i); return mm ? vn(mm[1]) : null; };
+
+  // Tổng thanh toán: số lớn nhất trên các dòng "Tổng…/Total" (bỏ dòng bằng chữ)
+  function totalOf(res, lines, cells, last) {
     const totals = lines.filter((l) => /tổng|total|cộng/i.test(l.text) && !/bằng chữ|in words/i.test(l.text))
       .flatMap((l) => l.cells.map((c) => vn(c.s)).filter((n) => isFinite(n)));
-    // dòng tổng chỉ toàn số ngay dưới bảng (MISA)
-    const lastItemY = sttCells.length ? sttCells[sttCells.length - 1].y : head.y;
-    // (dòng tổng không nhãn của MISA)
-    lines.filter((l) => l.p === p && l.y < lastItemY && l.cells.every((c) => isFinite(vn(c.s)) || isPct(c.s)))
+    // dòng tổng chỉ toàn số ngay dưới bảng, không có nhãn (MISA)
+    if (last) lines.filter((l) => l.p === last.p && l.y < last.y && l.cells.every((c) => isFinite(vn(c.s)) || isPct(c.s)))
       .forEach((l) => l.cells.forEach((c) => { const n = vn(c.s); if (isFinite(n)) totals.push(n); }));
     if (totals.length) res.total = Math.max(...totals);
-    return finish(res, lines);
+  }
+
+  /* Bảng không có cột STT: tiêu đề "Tên hàng hóa, dịch vụ | Số lượng | Đơn giá | Thành tiền".
+     Mỗi dòng có số tiền ở các cột bên phải = 1 dòng hàng; dòng chữ không có số = phần nối của diễn giải dòng trên. */
+  function tableNoStt(res, cells, lines, text) {
+    const head = cells.find((c) => /^(Tên\s*hàng\s*hó?o?á?a|Tên\s*hàng|Diễn\s*giải|Nội\s*dung)/i.test(c.s) && !/:/.test(c.s));
+    if (!head) return false;
+    const p = head.p, H = head.h;
+    const headCells = cells.filter((c) => c.p === p && Math.abs(c.y - head.y) < H * 0.8 && c.x > head.x2 && !/^\(/.test(c.s)).sort((a, b) => a.x - b.x);
+    if (!headCells.length) return false;
+    const descEnd = headCells[0].x - 4;
+    const rowLines = lines.filter((l) => l.p === p && l.y < head.y - H * 0.5).sort((a, b) => b.y - a.y);
+    const isIndex = (l) => l.cells.some((c) => /\d\s*=\s*\d/.test(c.s)) || (l.cells.length >= 3 && l.cells.every((c) => /^\d{1,2}$/.test(c.s)));
+    const isSub = (l) => l.cells.every((c) => /^\(?[A-Za-z][A-Za-z .,/'-]*\)?$/.test(c.s));   // dòng tiêu đề tiếng Anh
+    const items = []; let started = false;
+    for (const l of rowLines) {
+      if (/tổng|cộng|total|sum|bằng chữ|thuế suất|chiết khấu|người mua|người bán/i.test(l.text)) break;
+      if (isIndex(l)) { started = true; continue; }
+      if (!started && isSub(l)) continue;
+      const desc = l.cells.filter((c) => c.x2 <= descEnd + 2 || c.x < descEnd - 20);
+      const nums = l.cells.filter((c) => !desc.includes(c));
+      const money = nums.map((c) => vn(c.s)).filter((n) => isFinite(n));
+      const words = desc.map((c) => c.s).join(' ');
+      if (money.length) { items.push({ desc: words, nums, y: l.y }); started = true; }
+      else if (items.length && words && items[items.length - 1].y - l.y < H * 2.5) {   // dòng nối diễn giải (sát dòng trên)
+        const last = items[items.length - 1]; last.desc += ' ' + words; last.y = l.y;
+      }
+    }
+    if (!items.length) return false;
+    const docRate = docRateOf(text);
+    items.forEach((it) => {
+      const pct = it.nums.find((c) => isPct(c.s));
+      const money = (arr) => arr.map((c) => vn(c.s)).filter((n) => isFinite(n));
+      let pre, rate = docRate, vat = null;
+      if (pct) {
+        rate = pctVal(pct.s);
+        const before = money(it.nums.filter((c) => c.x < pct.x)), after = money(it.nums.filter((c) => c.x > pct.x));
+        pre = before[before.length - 1];
+        if (after.length >= 2) vat = after[0];
+      } else { const mm = money(it.nums); pre = mm[mm.length - 1]; }
+      if (!isFinite(pre)) { res.warnings.push(`Dòng "${it.desc}" không đọc được số tiền`); return; }
+      res.lines.push({ desc: it.desc.trim(), pre, rate: rate == null ? null : rate, vat });
+    });
+    return res.lines.length > 0;
   }
 
   /* Hoàn thiện: chia thuế còn thiếu theo tổng hoá đơn, kiểm tra khớp */
