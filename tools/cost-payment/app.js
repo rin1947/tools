@@ -147,9 +147,17 @@
       if (ex) { ex.amount += post; ex.fees.push(f); }
       else lines.push({ inv, amount: post, fees: [f] });
     });
-    // đuôi nội dung theo mẫu: "… lô hàng <mã lô> <tên hàng>" (nhiều mã hàng: tên mã đầu + số mã còn lại)
-    const names = [...new Set(L.items.map((it) => String(it.name || it.code || '').trim()).filter(Boolean))];
-    const goods = names.length <= 2 ? names.join(', ') : `${names[0]} + ${names.length - 1} mã khác`;
+    // đuôi nội dung theo mẫu: "… lô hàng <mã lô> <hàng>"
+    //  - lô ≤ 2 dòng hàng: tên hàng như cũ
+    //  - lô dài hơn: CHỈ mã hàng của sản phẩm chính, bỏ linh kiện / phụ kiện (cột LK/PK ở bước 2)
+    const filled = L.items.filter((it) => String(it.name || it.code || '').trim());
+    const names = [...new Set(filled.map((it) => String(it.name || it.code || '').trim()))];
+    let goods;
+    if (filled.length <= 2) goods = names.join(', ');
+    else {
+      const main = [...new Set(filled.filter((it) => !isPartItem(it)).map((it) => String(it.code || it.name).trim()))];
+      goods = main.length ? mainCodesText(main) : `${names[0]} + ${names.length - 1} mã khác`;
+    }
     const lot = [L.code ? `lô hàng ${L.code}` : (goods ? 'lô hàng' : ''), goods].filter(Boolean).join(' ');
     const tail = lot ? ` - ${lot}` : '';
     // phiếu không hoá đơn đứng ngay sau phiếu có hoá đơn của cùng người nhận
@@ -164,6 +172,28 @@
         return { inv: l.inv, amount: l.amount, content: text + tail };
       }),
     }));
+  }
+
+  /* Linh kiện / phụ kiện: người dùng tick cột LK/PK; chưa tick thì tool đoán theo tên + HS
+     (tên "Linh kiện…", "Phụ kiện…", "Bộ phận…", "Phụ tùng…"; HS nhóm bộ phận 84xx90 / 85xx90;
+      HS riêng của dây nguồn, phích cắm, ốc vít, sách HD, thùng/hộp giấy, bộ đổi nguồn) */
+  const PART_NAME_RE = /^\s*(linh\s*kiện|phụ\s*kiện|phụ\s*tùng|bộ\s*phận|spare|parts?\b|accessor)|(linh\s*kiện|phụ\s*kiện|phụ\s*tùng|thay\s*thế)/i;
+  const PART_HS = ['85444294', '85366992', '73181590', '49019990', '48191000', '85044090'];
+  function guessPart(it) {
+    const hs = String(it.hs || '').replace(/\D/g, '');
+    if (/^8[45]\d{2}90/.test(hs) || PART_HS.includes(hs)) return true;
+    return PART_NAME_RE.test(String(it.name || ''));
+  }
+  const isPartItem = (it) => (typeof it.part === 'boolean' ? it.part : guessPart(it));
+  function mainCodesText(codes) {
+    const MAX = 160; let t = '';
+    for (let i = 0; i < codes.length; i++) {
+      const next = t ? `${t}, ${codes[i]}` : codes[i];
+      const rest = codes.length - i - 1;
+      if (next.length > MAX && t) return `${t} + ${codes.length - i} mã khác`;
+      t = next; if (!rest) return t;
+    }
+    return t;
   }
 
   function joinNames(l) {
@@ -189,6 +219,7 @@
         <td><input data-k="code" value="${esc(it.code)}" style="width:110px"></td>
         <td><input data-k="name" value="${esc(it.name)}" style="width:240px"></td>
         <td><input data-k="color" value="${esc(it.color)}" style="width:100px"></td>
+        <td class="center" title="Linh kiện / phụ kiện: không ghi mã lên ĐNTT khi lô nhiều mã"><input type="checkbox" data-k="part" ${isPartItem(it) ? 'checked' : ''}></td>
         <td><input data-k="qty" value="${esc(it.qty)}" class="in-num" inputmode="decimal" style="width:80px"></td>
         <td><input data-k="price" value="${esc(it.price)}" class="in-num" inputmode="decimal" style="width:90px"></td>
         <td class="num" data-out="amount"></td>
@@ -202,7 +233,12 @@
   $('itemBody').addEventListener('input', (e) => {
     const tr = e.target.closest('tr'); const k = e.target.dataset.k;
     if (!tr || !k) return;
-    L.items[+tr.dataset.i][k] = e.target.value; update();
+    L.items[+tr.dataset.i][k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+    if (k === 'name' || k === 'hs') {        // chưa tick tay thì cập nhật ô đoán LK/PK
+      const it = L.items[+tr.dataset.i];
+      if (typeof it.part !== 'boolean') tr.querySelector('[data-k="part"]').checked = guessPart(it);
+    }
+    update();
   });
   $('itemBody').addEventListener('click', (e) => {
     if (!e.target.closest('[data-del]')) return;
@@ -286,7 +322,7 @@
       tr.querySelector('[data-out="cost"]').textContent = r.cost == null ? '' : mny(r.cost);
       tr.querySelector('[data-out="costCif"]').textContent = r.costCif == null ? '' : mny(r.costCif);
     });
-    $('itemFoot').innerHTML = `<tr><td colspan="3">TỔNG</td><td class="num">${fmt.num(c.qty, 0)}</td><td></td>
+    $('itemFoot').innerHTML = `<tr><td colspan="4">TỔNG</td><td class="num">${fmt.num(c.qty, 0)}</td><td></td>
       <td class="num">${fmt.num(c.fob, 2)}</td><td colspan="5"></td></tr>`;
     // bảng kê: Tiền VAT (để trống = tự tính, hiện mờ) và +VAT
     document.querySelectorAll('#feeBody tr').forEach((tr) => {
